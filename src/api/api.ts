@@ -1,5 +1,5 @@
 // @ts-ignore
-import axios from "axios/dist/axios.js";
+import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Definimos uma interface simples para o config caso o TS não reconheça
