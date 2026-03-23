@@ -60,13 +60,17 @@ api.interceptors.request.use(async (config: any) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  // Se a empresa foi selecionada, injetamos no Header ou na URL
+  // Só adiciona os headers e params se eles realmente existirem
   if (empresa && filial) {
-    // Padrão Protheus Cloud para troca de contexto:
     config.headers["TenantId"] = `${empresa},${filial}`;
-
-    // Opcional: Adicionar via Params se seu TLPP ler via QueryString
-    config.params = { ...config.params, empresa, filial };
+    config.params = { 
+      ...config.params, 
+      empresa: empresa, 
+      filial: filial 
+    };
+  } else {
+    // OPCIONAL: Se o Protheus Cloud exigir um contexto inicial para listar empresas
+    // config.headers["TenantId"] = "01,0101"; 
   }
 
   return config;
