@@ -40,17 +40,24 @@ const SelecaoEmpresaScreen: React.FC<Props> = ({ onConfirm, route }) => {
     carregarEmpresas();
   }, []);
 
- const carregarEmpresas = async () => {
+const carregarEmpresas = async () => {
     try {
       setLoading(true);
-      // Verificamos se o vendedorId veio pela rota ou pelo storage
+      
+      // Tenta pegar o vendedorId da rota ou do storage (garantia para o APK)
       const storageVendedorId = await AsyncStorage.getItem("@vendedor_id");
-      const vendedorId = route.params?.vendedorId || storageVendedorId || "admin";
+      const vendedorId = route.params?.vendedorId || storageVendedorId;
 
-      console.log(`🔍 Buscando empresas para o vendedor: ${vendedorId}`);
+      if (!vendedorId) {
+        Alert.alert("Erro", "Vendedor não identificado. Faça login novamente.");
+        navigation.navigate("Login");
+        return;
+      }
 
-      // Chamada da API
-      const data = await buscarEmpresasDinamico(vendedorId);
+      console.log("Buscando empresas para:", vendedorId);
+      const response = await buscarEmpresasDinamico(vendedorId);
+      
+      const data = response.data;
 
       if (!data || data.length === 0) {
         Alert.alert("Aviso", "Nenhuma empresa vinculada a este vendedor.");
@@ -59,17 +66,17 @@ const SelecaoEmpresaScreen: React.FC<Props> = ({ onConfirm, route }) => {
       setEmpresas(data);
       setFilteredEmpresas(data);
     } catch (error: any) {
-      console.error("ERRO NA BUSCA DINÂMICA:", error);
+      console.error(error);
       
-      // DIAGNÓSTICO PARA O APK:
-      const errorMsg = error.response 
-        ? `Status: ${error.response.status} - ${JSON.stringify(error.response.data)}` 
-        : error.message;
+      // MENSAGEM DE DIAGNÓSTICO PARA O APK
+      let detalhe = error.message;
+      if (error.response) {
+        detalhe = `Status: ${error.response.status} - ${JSON.stringify(error.response.data)}`;
+      } else if (error.request) {
+        detalhe = "O servidor não respondeu. Verifique se o Protheus está acessível de redes externas.";
+      }
 
-      Alert.alert(
-        "Erro na Conexão",
-        `Não foi possível carregar as empresas.\n\nDetalhe técnico: ${errorMsg}`
-      );
+      Alert.alert("Erro na API", detalhe);
     } finally {
       setLoading(false);
     }
