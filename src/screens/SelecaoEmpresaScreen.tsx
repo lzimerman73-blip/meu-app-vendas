@@ -40,17 +40,36 @@ const SelecaoEmpresaScreen: React.FC<Props> = ({ onConfirm, route }) => {
     carregarEmpresas();
   }, []);
 
-  const carregarEmpresas = async () => {
+ const carregarEmpresas = async () => {
     try {
       setLoading(true);
-      const vendedorId = route.params?.vendedorId;
-      const response = await api.get(`api/getempresas?vendedor=${vendedorId}`);
-      const data = response.data.items || [];
+      // Verificamos se o vendedorId veio pela rota ou pelo storage
+      const storageVendedorId = await AsyncStorage.getItem("@vendedor_id");
+      const vendedorId = route.params?.vendedorId || storageVendedorId || "admin";
+
+      console.log(`🔍 Buscando empresas para o vendedor: ${vendedorId}`);
+
+      // Chamada da API
+      const data = await buscarEmpresasDinamico(vendedorId);
+
+      if (!data || data.length === 0) {
+        Alert.alert("Aviso", "Nenhuma empresa vinculada a este vendedor.");
+      }
+
       setEmpresas(data);
       setFilteredEmpresas(data);
     } catch (error: any) {
-      console.error("ERRO:", error);
-      Alert.alert("Erro", "Não foi possível carregar as empresas.");
+      console.error("ERRO NA BUSCA DINÂMICA:", error);
+      
+      // DIAGNÓSTICO PARA O APK:
+      const errorMsg = error.response 
+        ? `Status: ${error.response.status} - ${JSON.stringify(error.response.data)}` 
+        : error.message;
+
+      Alert.alert(
+        "Erro na Conexão",
+        `Não foi possível carregar as empresas.\n\nDetalhe técnico: ${errorMsg}`
+      );
     } finally {
       setLoading(false);
     }
