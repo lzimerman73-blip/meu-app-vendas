@@ -19,8 +19,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.leandroz.MeuAppVendas",
-      "usesCleartextTraffic": true
+      "package": "com.leandroz.MeuAppVendas",     
     },
     "web": {
       "favicon": "./assets/favicon.png"
