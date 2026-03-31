@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, {
+  useEffect,
+  useState,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
@@ -18,6 +24,7 @@ import {
   TextInput,
   Divider,
 } from "react-native-paper";
+import { useFocusEffect } from "@react-navigation/native";
 import api from "../api/api";
 
 const SelecaoProdutosScreen = ({ route, navigation }: any) => {
@@ -38,10 +45,19 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
     carrinhoInicial || {},
   );
 
-  // --- CÁLCULO DE ITENS (Movido para o topo para evitar erro de escopo) ---
+  // --- MELHOR PRÁTICA: RESETAR STATUS DE FINALIZAÇÃO AO VOLTAR PARA A TELA ---
+  useFocusEffect(
+    useCallback(() => {
+      navigation.setParams({ finalizandoPedido: false });
+    }, [navigation]),
+  );
+
+  // --- CÁLCULO DE ITENS ---
   const totalItens = Object.values(carrinho).reduce((a, b) => a + b.qtd, 0);
 
-  const [pedidoFinalizado, setPedidoFinalizado] = useState(false);
+  const totalItensRef = useRef(totalItens);
+  const finalizandoRef = useRef(false);
+
   const [vendedorRecuperado, setVendedorRecuperado] = useState<string | null>(
     vendedorId,
   );
@@ -56,7 +72,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
     }).format(valor || 0);
   };
 
-  // --- CÁLCULO DO SALDO FLEX EM TEMPO REAL ---
+  // --- CÁLCULO DO SALDO FLEX ---
   const gastoTotalCarrinho = Object.values(carrinho).reduce((acc, item) => {
     const vDescUnitario =
       parseFloat(String(item.valorDesconto).replace(",", ".")) || 0;
@@ -65,17 +81,20 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
   }, 0);
 
   const saldoRestante = (saldoFlex || 0) - gastoTotalCarrinho;
-  // ------------------------------------------
 
-  // --- INTERCEPTAÇÃO DO BOTÃO VOLTAR ---
+  // --- INTERCEPTAÇÃO PROFISSIONAL DE SAÍDA ---
   useEffect(() => {
     const interceptarSaida = navigation.addListener(
       "beforeRemove",
       (e: any) => {
-        if (totalItens === 0) {
+        // Se não houver itens OU se a rota estiver marcada como 'finalizandoPedido', permitimos a saída sem alerta
+        const estaFinalizando = route.params?.finalizandoPedido === true;
+
+        if (totalItens === 0 || estaFinalizando) {
           return;
         }
 
+        // Impede a navegação padrão
         e.preventDefault();
 
         Alert.alert(
@@ -94,7 +113,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
     );
 
     return interceptarSaida;
-  }, [navigation, totalItens]);
+  }, [navigation, totalItens, route.params?.finalizandoPedido]);
 
   useEffect(() => {
     const carregarProdutos = async () => {
@@ -123,6 +142,48 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
     };
     buscarVendedorNoStorage();
   }, [vendedorId]);
+
+  useEffect(() => {
+    totalItensRef.current = totalItens;
+  }, [totalItens]);
+
+  // Se o usuário voltar para esta tela (vinda da revisão), reativa a trava
+  useFocusEffect(
+    useCallback(() => {
+      finalizandoRef.current = false;
+    }, []),
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (e: any) => {
+      const { action } = e.data;
+
+      // REGRA 1: Se o carrinho estiver vazio, sai direto
+      // REGRA 2: Se marcamos como 'finalizandoRef', sai direto (venda salva)
+      // REGRA 3: Se a ação for 'NAVIGATE' (indo para Revisão), sai direto
+      if (
+        totalItensRef.current === 0 ||
+        finalizandoRef.current ||
+        action.type === "NAVIGATE"
+      ) {
+        return;
+      }
+
+      // Impede a saída padrão
+      e.preventDefault();
+
+      Alert.alert("Abandonar Pedido?", "Os itens do carrinho serão perdidos.", [
+        { text: "Continuar Comprando", style: "cancel" },
+        {
+          text: "Sair",
+          style: "destructive",
+          onPress: () => navigation.dispatch(action),
+        },
+      ]);
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   const atualizarItemCarrinho = (
     codpro: string,
@@ -514,6 +575,10 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
             style={styles.btnFinalizar}
             onPress={() => {
               const idParaEnviar = vendedorRecuperado || vendedorId;
+
+              // --- MELHOR PRÁTICA: MARCAR A ROTA COMO FINALIZANDO ANTES DE NAVEGAR ---
+              navigation.setParams({ finalizandoPedido: true });
+              finalizandoRef.current = true; // Libera a trava para ir para a próxima tela
               navigation.navigate("RevisaoPedido", {
                 carrinho,
                 cliente,

@@ -38,6 +38,7 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
   // --- NOVOS ESTADOS PARA GPS E ATENDIMENTO ---
   const [tipoAtendimento, setTipoAtendimento] = useState("gps");
   const [localizando, setLocalizando] = useState(false);
+  const [atualizandoGps, setAtualizandoGps] = useState(false); // Novo estado de carregamento do botão de GPS
   const [distanciaOk, setDistanciaOk] = useState(false);
   const [distanciaMetros, setDistanciaMetros] = useState<number | null>(null);
 
@@ -61,10 +62,61 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
     return R * c;
   };
 
+  // --- NOVA FUNÇÃO: SALVAR LATITUDE/LONGITUDE NO PROTHEUS ---
+  const cadastrarLocalizacaoAtual = async (locationPrevia?: any) => {
+    setAtualizandoGps(true);
+    try {
+      let location = locationPrevia;
+
+      if (!location) {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Erro", "Permissão de localização negada.");
+          setAtualizandoGps(false);
+          return;
+        }
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+      }
+
+      const novaLat = location.coords.latitude;
+      const novaLon = location.coords.longitude;
+
+      await api.post("/api/atualizarcoordenadas", {
+        cliente: codCli,
+        loja: loja,
+        vendedor: vendedorId,
+        latitude: novaLat,
+        longitude: novaLon,
+      });
+
+      // Atualiza os dados locais
+      setDados((prev: any) => ({
+        ...prev,
+        dados_cadastrais: {
+          ...prev.dados_cadastrais,
+          latitude: novaLat.toString(),
+          longitude: novaLon.toString(),
+        },
+      }));
+
+      Alert.alert("Sucesso", "Coordenadas cadastradas no Protheus!");
+    } catch (error) {
+      console.error("Erro ao atualizar coordenadas:", error);
+      Alert.alert("Erro", "Não foi possível gravar a localização.");
+    } finally {
+      setAtualizandoGps(false);
+      setLocalizando(false); // <--- ADICIONE ESTA LINHA para garantir que o círculo pare
+    }
+  };
+
+  // --- LÓGICA DE VERIFICAÇÃO DE GPS ---
   // --- LÓGICA DE VERIFICAÇÃO DE GPS ---
   const verificarLocalizacao = async () => {
-    if (tipoAtendimento !== "gps") {
+    if (!dados || tipoAtendimento !== "gps") {
       setDistanciaOk(true);
+      setLocalizando(false);
       return;
     }
 
@@ -77,8 +129,7 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
           "A permissão de localização é obrigatória para atendimentos presenciais.",
         );
         setDistanciaOk(false);
-        setLocalizando(false);
-        return;
+        return; // Vai cair no finally e desligar o loading
       }
 
       const location = await Location.getCurrentPositionAsync({
@@ -91,9 +142,19 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
       if (!latCli || !lonCli) {
         Alert.alert(
           "Cadastro Incompleto",
-          "Este cliente não possui coordenadas (Lat/Log) cadastradas no Protheus.",
+          "Este cliente não possui coordenadas (Lat/Log) cadastradas no Protheus. Deseja usar sua localização atual para cadastrar agora?",
+          [
+            {
+              text: "Agora Não",
+              style: "cancel",
+              onPress: () => setDistanciaOk(false),
+            },
+            {
+              text: "Sim, Cadastrar",
+              onPress: () => cadastrarLocalizacaoAtual(location),
+            },
+          ],
         );
-        setDistanciaOk(false);
       } else {
         const dist = calcularDistancia(
           location.coords.latitude,
@@ -102,20 +163,27 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
           lonCli,
         );
         setDistanciaMetros(Math.round(dist));
-
-        if (dist <= 100) {
-          setDistanciaOk(true);
-        } else {
-          setDistanciaOk(false);
-        }
+        setDistanciaOk(dist <= 100);
       }
     } catch (error) {
       console.error(error);
       Alert.alert("Erro GPS", "Não foi possível obter sua localização atual.");
+      setDistanciaOk(false);
     } finally {
+      // FORÇA o desligamento do loading independente do que aconteceu acima
       setLocalizando(false);
     }
   };
+
+  // Sempre que mudar o cliente ou loja via navegação, reseta os dados e loadings
+  useEffect(() => {
+    setDados(null);
+    setLoading(true);
+    setLocalizando(false);
+    setAtualizandoGps(false);
+    setDistanciaOk(false);
+    setDistanciaMetros(null);
+  }, [codCli, loja]);
 
   useEffect(() => {
     if (dados) {
@@ -126,7 +194,7 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
         setDistanciaMetros(null);
       }
     }
-  }, [tipoAtendimento, dados]);
+  }, [tipoAtendimento, dados]); // Se os dados mudarem (como após atualizar a latitude), ele roda o GPS de novo automaticamente!
 
   // --- FORMATAÇÕES ---
   const formatarMoeda = (valor: any) => {
@@ -259,7 +327,7 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
 
         {tipoAtendimento === "gps" && (
           <View style={styles.statusGps}>
-            {localizando ? (
+            {localizando || atualizandoGps ? (
               <ActivityIndicator size="small" color="#005492" />
             ) : distanciaOk ? (
               <Text style={{ color: "green", fontWeight: "bold" }}>
@@ -281,7 +349,7 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
         <Button
           mode="contained"
           icon="cart-plus"
-          disabled={!distanciaOk || localizando}
+          disabled={!distanciaOk || localizando || atualizandoGps}
           onPress={() =>
             navigation.navigate("SelecaoTabela", {
               cliente,
@@ -294,7 +362,9 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
           style={[
             styles.btnNovoPedido,
             temAtraso && distanciaOk && { backgroundColor: "#d32f2f" },
-            (!distanciaOk || localizando) && { backgroundColor: "#ccc" },
+            (!distanciaOk || localizando || atualizandoGps) && {
+              backgroundColor: "#ccc",
+            },
           ]}
           labelStyle={styles.labelBotao}
         >
@@ -326,6 +396,29 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
           titleStyle={styles.textoPequeno}
           descriptionStyle={{ color: "green", fontWeight: "bold" }}
         />
+        <Divider />
+        <List.Item
+          title="Latitude / Longitude"
+          description={
+            dados?.dados_cadastrais?.latitude
+              ? `${dados.dados_cadastrais.latitude}, ${dados.dados_cadastrais.longitude}`
+              : "Não cadastrado"
+          }
+          titleStyle={styles.textoPequeno}
+        />
+        <View style={{ paddingHorizontal: 15, paddingVertical: 10 }}>
+          <Button
+            mode="outlined"
+            icon="map-marker-plus"
+            loading={atualizandoGps}
+            disabled={atualizandoGps}
+            onPress={() => cadastrarLocalizacaoAtual()}
+            style={{ borderColor: "#005492" }}
+            textColor="#005492"
+          >
+            Atualizar Coordenadas GPS
+          </Button>
+        </View>
       </List.Accordion>
 
       <Divider />

@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   Alert,
   StatusBar,
-  ViewStyle,
 } from "react-native";
 import {
   Text,
@@ -21,7 +20,10 @@ import {
   Modal,
   Searchbar,
 } from "react-native-paper";
+import { CommonActions } from "@react-navigation/native";
 import api from "../api/api";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 
 // --- INTERFACES ---
 interface ItemCarrinho {
@@ -30,6 +32,7 @@ interface ItemCarrinho {
   precoVenda: string | number;
   percDesconto: string;
   valorDesconto: string;
+  valorFlex?: string;
 }
 
 interface Produto {
@@ -56,8 +59,6 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
     saldoFlex,
   } = route.params;
 
-  // --- RECONSTRUÇÃO DO ID DO VENDEDOR (REDE DE SEGURANÇA) ---
-  // Se o vendedorId vier undefined, tentamos pegar do objeto cliente ou do pedido salvo
   const idVendedorEfetivo =
     vendedorId || cliente?.vendedor || dadosPedidoSalvo?.vendedor;
 
@@ -74,7 +75,6 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
   const [modalVisivel, setModalVisivel] = useState<boolean>(false);
   const [busca, setBusca] = useState<string>("");
 
-  // --- CÁLCULOS ---
   const formatarMoeda = (valor: number) => {
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
@@ -101,14 +101,105 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
       c.id.includes(busca),
   );
 
-  // --- CARREGAMENTO DA API ---
+  const gerarPDFCotacao = async () => {
+    // Usamos a sua função de formatar moeda já existente no arquivo
+    const dataAtual = new Date().toLocaleDateString("pt-BR");
+
+    // Montando as linhas da tabela usando 'itensRevisao' e 'carrinho'
+    const itensHtml = itensRevisao
+      .map((item: Produto, index: number) => {
+        const d = carrinho[item.codpro];
+
+        // Lógica de preço que você já usa no seu render (tratando string ou number)
+        const pV =
+          typeof d.precoVenda === "string"
+            ? parseFloat(d.precoVenda.replace(",", "."))
+            : d.precoVenda;
+
+        const precoFinal = pV || item.preco;
+        const subtotal = precoFinal * d.qtd;
+
+        return `
+      <tr>
+        <td style="text-align: center;">${String(index + 1).padStart(2, "0")}</td>
+        <td>${item.desc}</td>
+        <td style="text-align: center;">${d.qtd}</td>
+        <td style="text-align: right;">${formatarMoeda(precoFinal)}</td>
+        <td style="text-align: right;">${formatarMoeda(subtotal)}</td>
+      </tr>
+    `;
+      })
+      .join("");
+
+    const htmlContent = `
+    <html>
+      <head>
+        <style>
+          body { font-family: 'Helvetica'; padding: 20px; color: #333; }
+          .header { text-align: center; border-bottom: 2px solid #005492; padding-bottom: 10px; }
+          .title { font-size: 18px; font-weight: bold; color: #005492; }
+          .info-section { margin-top: 20px; font-size: 12px; line-height: 1.6; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 10px; }
+          th { background-color: #005492; color: white; padding: 8px; text-align: left; }
+          td { border: 1px solid #ddd; padding: 8px; }
+          .total-box { margin-top: 20px; text-align: right; font-size: 14px; font-weight: bold; color: #2E7D32; }
+          .footer { margin-top: 30px; font-size: 10px; color: #999; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="title">Automação da Força de Vendas (SFA)</div>
+          <div style="font-size: 14px;">Cotação / Orçamento</div>
+        </div>
+        
+        <div class="info-section">
+          <p><strong>Data:</strong> ${dataAtual}</p>
+          <p><strong>Cliente:</strong> ${cliente?.NOME || cliente?.nome || "Não informado"}</p>
+          <p><strong>Vendedor:</strong> ${vendedorId || ""}</p>
+          <p><strong>Condição:</strong> ${condicaoSel || "A combinar"}</p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 40px; text-align: center;">Item</th>
+              <th>Produto</th>
+              <th style="width: 40px; text-align: center;">Qtd</th>
+              <th style="text-align: right;">Preço Un.</th>
+              <th style="text-align: right;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itensHtml}
+          </tbody>
+        </table>
+
+        <div class="total-box">
+          VALOR TOTAL DO PEDIDO: ${formatarMoeda(valorTotal)}
+        </div>
+
+        <div class="footer">
+          ESTE DOCUMENTO NÃO TEM VALIDADE FISCAL
+        </div>
+      </body>
+    </html>
+  `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      await Sharing.shareAsync(uri, {
+        UTI: ".pdf",
+        mimeType: "application/pdf",
+      });
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível gerar o PDF da cotação.");
+    }
+  };
+
   useEffect(() => {
     const carregarCondicoes = async () => {
-      console.log("DEBUG REVISÃO - ID Vendedor:", idVendedorEfetivo);
-
       if (!idVendedorEfetivo) {
         setLoading(false);
-        // Não damos Alert aqui para não travar a tela se for apenas um erro de log
         return;
       }
 
@@ -130,7 +221,6 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
     carregarCondicoes();
   }, [idVendedorEfetivo]);
 
-  // --- FINALIZAÇÃO ---
   const finalizarPedido = async () => {
     if (!condicaoSel || !formaPagto) {
       return Alert.alert(
@@ -139,7 +229,6 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
       );
     }
 
-    // Função interna para padronizar a conversão de valores (igual ao PedidosOffline)
     const tratarValor = (valor: any) => {
       if (typeof valor === "number") return valor;
       const str = String(valor || "0");
@@ -163,15 +252,10 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
               tabela,
               condicaoPagamento: condicaoSel,
               formaPagto,
-              valorTotal: tratarValor(valorTotal), // Salva o total limpo
-
-              // Mantendo o saldo original do vendedor
+              valorTotal: tratarValor(valorTotal),
               saldoFlex: saldoFlex,
-
               itens: itensRevisao.map((item: any) => {
                 const d = carrinho[item.codpro];
-
-                // Trata os valores do item individualmente
                 const nPrecoVenda = tratarValor(d.precoVenda);
                 const nValorFlex = tratarValor(d.valorFlex || d.valorDesconto);
                 const nPrecoTabela = tratarValor(d.precoTabela);
@@ -180,13 +264,9 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
                   codpro: item.codpro,
                   desc: item.desc,
                   qtd: Number(d.qtd),
-
-                  // Salva como Number puro com 2 casas decimais
                   precoVenda: Number(nPrecoVenda.toFixed(2)),
                   precoTabela: Number(nPrecoTabela.toFixed(2)),
                   valorFlex: Number(nValorFlex.toFixed(2)),
-
-                  // Mantém o percentual como string ou limpa se preferir
                   percDesconto: d.percDesconto,
                   valorDesconto: d.valorDesconto,
                 };
@@ -210,8 +290,26 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
               JSON.stringify(lista),
             );
 
+            // --- MELHOR PRÁTICA: RESET DE NAVEGAÇÃO APÓS SUCESSO ---
+            // Isso limpa a pilha e evita que o 'beforeRemove' da tela anterior
+            // veja dados sujos.
             Alert.alert("Sucesso", "Pedido salvo offline!", [
-              { text: "OK", onPress: () => navigation.navigate("Clientes") },
+              {
+                text: "OK",
+                onPress: () => {
+                  navigation.dispatch(
+                    CommonActions.reset({
+                      index: 0,
+                      routes: [
+                        {
+                          name: "Clientes",
+                          params: { vendedorId: vendedorId }, // O params tem que ser aqui dentro!
+                        },
+                      ],
+                    }),
+                  );
+                },
+              },
             ]);
           } catch (e) {
             Alert.alert("Erro", "Não foi possível gravar o pedido.");
@@ -294,7 +392,15 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
                 />
               </Surface>
             </View>
-
+            <Button
+              mode="outlined"
+              icon="file-pdf-box"
+              onPress={gerarPDFCotacao} // Função que criamos antes
+              style={styles.btnPdf}
+              textColor="#005492"
+            >
+              GERAR COTAÇÃO (PDF)
+            </Button>
             <Button
               mode="contained"
               onPress={finalizarPedido}
@@ -406,6 +512,12 @@ const styles = StyleSheet.create({
     padding: 20,
     margin: 40,
     borderRadius: 10,
+  },
+  btnPdf: {
+    marginHorizontal: 15,
+    marginTop: 10,
+    borderColor: "#005492",
+    borderWidth: 1.5,
   },
 });
 
