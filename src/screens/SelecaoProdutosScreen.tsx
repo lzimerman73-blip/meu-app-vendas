@@ -371,10 +371,26 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
   return (
     <View style={styles.container}>
       <Surface style={styles.headerInfo}>
+        {/* --- NOVO BLOCO: DADOS DO CLIENTE --- */}
+        <View
+          style={{
+            marginBottom: 10,
+            borderBottomWidth: 1,
+            borderBottomColor: "#eee",
+            paddingBottom: 8,
+          }}
+        ></View>
+
         <View style={styles.rowHeader}>
           <View>
             <Text style={styles.tabelaTexto}>
-              Tabela: <Text style={{ fontWeight: "bold" }}>{tabela}</Text>
+              Tabela:{" "}
+              <Text style={{ fontWeight: "bold", color: "#333" }}>
+                {/* Aqui garantimos que se tabelaDesc existir, ele concatena */}
+                {route.params.tabelaDesc
+                  ? `${tabela} - ${route.params.tabelaDesc}`
+                  : tabela}
+              </Text>
             </Text>
             <Text style={styles.saldoFlexLabel}>
               Saldo Flex:{" "}
@@ -578,17 +594,15 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
 
               // --- MELHOR PRÁTICA: MARCAR A ROTA COMO FINALIZANDO ANTES DE NAVEGAR ---
               navigation.setParams({ finalizandoPedido: true });
-              finalizandoRef.current = true; // Libera a trava para ir para a próxima tela
+              finalizandoRef.current = true;
+
               navigation.navigate("RevisaoPedido", {
-                carrinho,
-                cliente,
-                loja,
-                tabela,
-                vendedorId: idParaEnviar,
-                pedidoIdEdicao,
+                ...route.params, // <--- ISSO É O MAIS IMPORTANTE: Leva VendedorNome, TabelaDesc e Cliente Completo
+                carrinho, // Dados atuais do carrinho
+                vendedorId: idParaEnviar, // Mantém o ID que você definiu
                 produtosOriginais: produtos,
-                dadosPedidoSalvo: route.params?.dadosPedidoSalvo,
-                saldoFlex,
+                // Note que não precisamos mais digitar cliente, loja, saldoFlex...
+                // o "...route.params" já está levando eles lá de trás!
               });
             }}
           >

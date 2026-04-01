@@ -18,6 +18,8 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import api from "../api/api";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 
 const PedidosOfflineScreen = ({ navigation }: any) => {
   const [pedidos, setPedidos] = useState<any[]>([]);
@@ -77,6 +79,8 @@ const PedidosOfflineScreen = ({ navigation }: any) => {
       };
     });
 
+    console.log("CONTEÚDO DO PEDIDO:", JSON.stringify(pedido, null, 2));
+
     navigation.navigate("SelecaoProdutos", {
       cliente: pedido.cliente,
       loja: pedido.loja,
@@ -87,6 +91,280 @@ const PedidosOfflineScreen = ({ navigation }: any) => {
       dadosPedidoSalvo: pedido,
       saldoFlex: pedido.saldoFlex || 0, // Devolve o saldo flex para a tela
     });
+  };
+
+  {
+    /* GERAR PDF */
+  }
+  const gerarPDFPedidoSalvo = async (pedido: any) => {
+    if (!pedido) {
+      Alert.alert("Erro", "O pedido selecionado está corrompido ou vazio.");
+      return;
+    }
+
+    try {
+      const dataPedido = pedido.data || new Date().toLocaleDateString("pt-BR");
+
+      // FUNÇÃO PARA CALCULAR +1 DIA ÚTIL
+      const calcularDataEntregaUtil = (dataStr: string) => {
+        let data = new Date();
+        // Tenta interpretar a data no formato DD/MM/YYYY
+        if (dataStr && dataStr.includes("/")) {
+          const [dia, mes, ano] = dataStr.split("/");
+          data = new Date(Number(ano), Number(mes) - 1, Number(dia));
+        } else if (dataStr) {
+          data = new Date(dataStr);
+        }
+
+        if (isNaN(data.getTime())) data = new Date();
+
+        data.setDate(data.getDate() + 1); // Adiciona 1 dia
+
+        // Pula final de semana
+        if (data.getDay() === 6) {
+          // Sábado
+          data.setDate(data.getDate() + 2);
+        } else if (data.getDay() === 0) {
+          // Domingo
+          data.setDate(data.getDate() + 1);
+        }
+        return data.toLocaleDateString("pt-BR");
+      };
+
+      const dataEntrega = calcularDataEntregaUtil(dataPedido);
+
+      // 1. Dados do Cliente
+      const cliente = pedido.cliente || {};
+      const codCliente = cliente.CODIGO || cliente.codigo || "";
+      const lojaCliente = cliente.LOJA || cliente.loja || "01";
+      const nomeCliente =
+        cliente.NOME || cliente.nome || "Cliente não identificado";
+      const clienteCompleto = codCliente
+        ? `${codCliente}-${lojaCliente}-${nomeCliente}`
+        : nomeCliente;
+
+      // Endereço do Cliente
+      const logradouro = cliente.END || cliente.endereco || "";
+      const bairro = cliente.BAIRRO || cliente.bairro || "";
+      // Adicionamos redundância para captar cidade e estado de qualquer origem
+      const municipio = pedido.cliente?.cidade || "";
+      const estado = cliente.EST || cliente.uf || cliente.estado || "";
+
+      const enderecoCompleto =
+        `${logradouro}${bairro ? ", " + bairro : ""} - ${municipio} - ${estado}`.trim() ||
+        "Endereço não informado";
+
+      // 2. Dados Gerais do Pedido
+      const filialAtiva = await AsyncStorage.getItem("@filial_ativa");
+
+      // BUSCANDO AS DESCRIÇÕES (Priorizando os campos de "Desc" que devemos salvar)
+      const nomeVendedor =
+        pedido.vendedorNome ||
+        pedido.vendedor ||
+        pedido.vendedorId ||
+        "Vendedor não identificado";
+
+      // Concatena código e descrição da filial se houver
+      const filialVenda = pedido.filialDesc
+        ? `${pedido.filial} - ${pedido.filialDesc}`
+        : pedido.filial || filialAtiva || "Não informada";
+
+      const codTabela = pedido.tabela || "";
+      const descTabela = pedido.tabelaDesc || "";
+
+      const tabelaPreco =
+        codTabela && descTabela
+          ? `${codTabela} - ${descTabela}`
+          : codTabela || descTabela || "Não informada";
+
+      const condicaoPagto =
+        pedido.condicaoDesc ||
+        pedido.condicaoPagamentoDesc ||
+        pedido.condicaoSel ||
+        pedido.configuracao?.condicao ||
+        "A combinar";
+
+      const formaPagto =
+        pedido.formaPagto ||
+        (pedido.configuracao?.pagamento === "BOL"
+          ? "BOLETO BANCARIO"
+          : pedido.configuracao?.pagamento === "PIX"
+            ? "PIX"
+            : "A combinar");
+
+      // 3. Itens e Cálculos
+      const listaItens = Array.isArray(pedido.itens)
+        ? pedido.itens
+        : Array.isArray(pedido.produtos)
+          ? pedido.produtos
+          : [];
+      const carrinho = pedido.carrinho || {};
+
+      const qtdProdutos = listaItens.length;
+      const qtdItensTotal = Object.values(carrinho).reduce(
+        (acc: number, curr: any) => acc + (Number(curr?.qtd) || 0),
+        0,
+      );
+
+      const valorTotal =
+        pedido.valorTotal || pedido.total || pedido.totais?.totalGeral || 0;
+
+      let somaQtdTotal = 0;
+      let somaValorTotal = 0;
+
+      const formatCur = (val: any) => {
+        const num = Number(val) || 0;
+        return new Intl.NumberFormat("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        }).format(num);
+      };
+
+      // 4. Montagem da Tabela de Itens
+      const itensHtml =
+        listaItens.length > 0
+          ? listaItens
+              .map((item: any, index: number) => {
+                if (!item) return "";
+                const id = item.codpro || item.CODPRO || "";
+                const dadosCarrinho = carrinho[id] || {};
+                const qtd = Number(dadosCarrinho.qtd || item.qtd || 0);
+
+                const pVenda =
+                  dadosCarrinho.precoVenda ||
+                  item.precoVenda ||
+                  item.preco ||
+                  0;
+                const precoLimpo =
+                  typeof pVenda === "string"
+                    ? parseFloat(pVenda.replace(",", "."))
+                    : pVenda;
+                const subtotal = precoLimpo * qtd;
+
+                somaQtdTotal += qtd;
+                somaValorTotal += subtotal;
+
+                return `
+        <tr>
+          <td style="text-align: center; font-weight: bold;">${String(index + 1).padStart(2, "0")}</td>
+          <td style="font-weight: bold;">${item.desc || item.DESC || "Produto sem descrição"}</td>
+          <td style="text-align: center;">${qtd}</td>
+          <td style="text-align: right;">${formatCur(precoLimpo)}</td>
+          <td style="text-align: right; font-weight: bold;">${formatCur(precoLimpo * qtd)}</td>
+        </tr>
+      `;
+              })
+              .join("")
+          : '<tr><td colspan="5" style="text-align:center">Nenhum item encontrado</td></tr>';
+
+      // 5. Layout HTML Modernizado
+      const htmlContent = `
+      <html>
+        <head>
+          <style>
+            body { font-family: 'Arial', sans-serif; padding: 20px; color: #000; font-size: 11px; line-height: 1.3; }
+            .main-title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 25px; color: #005492; }
+            
+            .section-title {
+              background-color: #005492;
+              color: white;
+              font-weight: bold;
+              padding: 6px 10px;
+              margin-top: 20px;
+              margin-bottom: 8px;
+              font-size: 13px;
+              border-radius: 3px;
+              text-transform: uppercase;
+              border: 1px solid #003d6b;
+            }
+            
+            .row { display: flex; padding: 3px 10px; }
+            .label { width: 30%; font-weight: bold; color: #555; }
+            .value { width: 70%; font-weight: bold; }
+            
+            table.grid-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; border: 2px solid #000; }
+            table.grid-table th { background-color: #e0e0e0; color: #000; border: 1px solid #000; padding: 8px; text-align: left; font-weight: bold; text-transform: uppercase; }
+            table.grid-table td { border: 1px solid #000; padding: 8px; }
+            .col-ordem { width: 45px; text-align: center; }
+            .col-qtde { width: 45px; text-align: center; }
+            .col-preco { width: 85px; text-align: right; }
+            .col-total { width: 95px; text-align: right; }
+            
+            .assinatura { margin-top: 60px; text-align: center; font-size: 12px; }
+            .footer { margin-top: 50px; font-size: 10px; color: #777; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="main-title">Automação da Força de Vendas (SFA)</div>
+          <div style="font-size: 14px; text-align: center; margin-top: -15px; margin-bottom: 20px;">Cotação / Orçamento</div>
+          
+          <div class="section-title">Cabeçalho</div>
+          <div class="row"><div class="label">Data pedido:</div><div class="value">${dataPedido}</div></div>
+          <div class="row"><div class="label">Profissional:</div><div class="value">${nomeVendedor}</div></div>
+          <div class="row"><div class="label">Cliente:</div><div class="value">${clienteCompleto}</div></div>
+          <div class="row"><div class="label">Local:</div><div class="value">${enderecoCompleto}</div></div>
+          <div class="row"><div class="label">Filial venda:</div><div class="value">${filialVenda}</div></div>
+          <div class="row"><div class="label">Tipo pedido:</div><div class="value">VENDA DE MERCADORIA</div></div>
+          <div class="row"><div class="label">Tabela de preço:</div><div class="value">${tabelaPreco}</div></div>
+          <div class="row"><div class="label">Condição de pagamento:</div><div class="value">${condicaoPagto}</div></div>
+          <div class="row"><div class="label">Tipo de cobrança:</div><div class="value">${formaPagto}</div></div>
+          <div class="row"><div class="label">Data entrega:</div><div class="value">${dataEntrega}</div></div>
+          <div class="row"><div class="label">Tipo frete:</div><div class="value">CIF</div></div>
+
+          <div class="section-title">Resumo</div>
+          <div class="row"><div class="label">Quantidade de produtos:</div><div class="value">${qtdProdutos}</div></div>
+          <div class="row"><div class="label">Quantidade de itens:</div><div class="value">${somaQtdTotal}</div></div>
+          <div class="row"><div class="label">Valor total liquido:</div><div class="value">${formatCur(valorTotal)}</div></div>
+
+          <div class="section-title">Entrega</div>
+          <div class="row"><div class="label">Data entrega:</div><div class="value">${dataEntrega}</div></div>
+          <div class="row"><div class="label">Tipo de frete:</div><div class="value">CIF</div></div>
+          <div class="row"><div class="label">Transportadora:</div><div class="value">T00139 - RISSO TRANSPORTES LTDA</div></div>
+
+          <div class="section-title">Itens do Orçamento</div>
+          <table class="grid-table">
+            <thead>
+              <tr>
+                <th class="col-ordem">Ordem</th>
+                <th>Produto / Descrição</th>
+                <th class="col-qtde">Qtde</th>
+                <th class="col-preco">Preço Venda</th>
+                <th class="col-total">Valor Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itensHtml}
+              <tr class="row-total-grid">
+                <td colspan="2" style="text-align: right; padding-right: 15px; font-weight: bold;">TOTAL GERAL:</td>
+                <td style="text-align: center; font-weight: bold;">${somaQtdTotal}</td>
+                <td></td>
+                <td style="text-align: right; font-weight: bold;">${formatCur(somaValorTotal)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="assinatura">
+            <p>_______________________________________________________</p>
+            <p><strong>${nomeCliente}</strong></p>
+            <p style="font-size: 10px; color: #666;">Assinatura do Cliente</p>
+          </div>
+
+          <div class="footer">
+            ESTE DOCUMENTO NÃO POSSUI VALIDADE FISCAL. GENERATED BY TOTVS SFA APP.
+          </div>
+        </body>
+      </html>
+    `;
+
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      await Sharing.shareAsync(uri, {
+        UTI: ".pdf",
+        mimeType: "application/pdf",
+      });
+    } catch (error: any) {
+      console.error("Erro PDF:", error);
+      Alert.alert("Erro", "Falha ao processar dados do pedido para o PDF.");
+    }
   };
 
   const enviarParaProtheus = async (pedido: any) => {
@@ -261,7 +539,15 @@ const PedidosOfflineScreen = ({ navigation }: any) => {
                   </Text>
                 </View>
 
+                {/* BOTÃO PDF AQUI */}
                 <View style={styles.acoesContainer}>
+                  <IconButton
+                    icon="file-pdf-box"
+                    iconColor="#005492"
+                    size={24}
+                    onPress={() => gerarPDFPedidoSalvo(item)} // 'item' é o pedido da linha atual
+                  />
+
                   {/* BOTÃO LÁPIS - EDIÇÃO */}
                   <IconButton
                     icon="pencil"

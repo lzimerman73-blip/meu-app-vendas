@@ -57,6 +57,7 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
     produtosOriginais,
     dadosPedidoSalvo,
     saldoFlex,
+    atendimento,
   } = route.params;
 
   const idVendedorEfetivo =
@@ -100,101 +101,6 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
       c.descricao.toLowerCase().includes(busca.toLowerCase()) ||
       c.id.includes(busca),
   );
-
-  const gerarPDFCotacao = async () => {
-    // Usamos a sua função de formatar moeda já existente no arquivo
-    const dataAtual = new Date().toLocaleDateString("pt-BR");
-
-    // Montando as linhas da tabela usando 'itensRevisao' e 'carrinho'
-    const itensHtml = itensRevisao
-      .map((item: Produto, index: number) => {
-        const d = carrinho[item.codpro];
-
-        // Lógica de preço que você já usa no seu render (tratando string ou number)
-        const pV =
-          typeof d.precoVenda === "string"
-            ? parseFloat(d.precoVenda.replace(",", "."))
-            : d.precoVenda;
-
-        const precoFinal = pV || item.preco;
-        const subtotal = precoFinal * d.qtd;
-
-        return `
-      <tr>
-        <td style="text-align: center;">${String(index + 1).padStart(2, "0")}</td>
-        <td>${item.desc}</td>
-        <td style="text-align: center;">${d.qtd}</td>
-        <td style="text-align: right;">${formatarMoeda(precoFinal)}</td>
-        <td style="text-align: right;">${formatarMoeda(subtotal)}</td>
-      </tr>
-    `;
-      })
-      .join("");
-
-    const htmlContent = `
-    <html>
-      <head>
-        <style>
-          body { font-family: 'Helvetica'; padding: 20px; color: #333; }
-          .header { text-align: center; border-bottom: 2px solid #005492; padding-bottom: 10px; }
-          .title { font-size: 18px; font-weight: bold; color: #005492; }
-          .info-section { margin-top: 20px; font-size: 12px; line-height: 1.6; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 10px; }
-          th { background-color: #005492; color: white; padding: 8px; text-align: left; }
-          td { border: 1px solid #ddd; padding: 8px; }
-          .total-box { margin-top: 20px; text-align: right; font-size: 14px; font-weight: bold; color: #2E7D32; }
-          .footer { margin-top: 30px; font-size: 10px; color: #999; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="title">Automação da Força de Vendas (SFA)</div>
-          <div style="font-size: 14px;">Cotação / Orçamento</div>
-        </div>
-        
-        <div class="info-section">
-          <p><strong>Data:</strong> ${dataAtual}</p>
-          <p><strong>Cliente:</strong> ${cliente?.NOME || cliente?.nome || "Não informado"}</p>
-          <p><strong>Vendedor:</strong> ${vendedorId || ""}</p>
-          <p><strong>Condição:</strong> ${condicaoSel || "A combinar"}</p>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 40px; text-align: center;">Item</th>
-              <th>Produto</th>
-              <th style="width: 40px; text-align: center;">Qtd</th>
-              <th style="text-align: right;">Preço Un.</th>
-              <th style="text-align: right;">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itensHtml}
-          </tbody>
-        </table>
-
-        <div class="total-box">
-          VALOR TOTAL DO PEDIDO: ${formatarMoeda(valorTotal)}
-        </div>
-
-        <div class="footer">
-          ESTE DOCUMENTO NÃO TEM VALIDADE FISCAL
-        </div>
-      </body>
-    </html>
-  `;
-
-    try {
-      const { uri } = await Print.printToFileAsync({ html: htmlContent });
-      await Sharing.shareAsync(uri, {
-        UTI: ".pdf",
-        mimeType: "application/pdf",
-      });
-    } catch (error) {
-      Alert.alert("Erro", "Não foi possível gerar o PDF da cotação.");
-    }
-  };
 
   useEffect(() => {
     const carregarCondicoes = async () => {
@@ -242,31 +148,59 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
         text: "Confirmar",
         onPress: async () => {
           try {
+            // --- 1. CAPTURA A HORA DE AGORA (FIM DO ATENDIMENTO) ---
+            const agoraFim = new Date();
+            const dataFim = agoraFim
+              .toISOString()
+              .split("T")[0]
+              .replace(/-/g, "");
+            const horaFim = agoraFim
+              .toLocaleTimeString("pt-BR", { hour12: false })
+              .substring(0, 5);
+
+            // Buscamos a descrição da condição selecionada para o PDF
+            const descCondicao =
+              condicoes?.find((c: any) => c.id === condicaoSel)?.descricao ||
+              condicaoSel;
+
             const novoPedido = {
               id: pedidoIdEdicao || Date.now().toString(),
               dataCriacao:
                 dadosPedidoSalvo?.dataCriacao || new Date().toISOString(),
-              vendedor: idVendedorEfetivo,
-              cliente: cliente,
+              data: new Date().toLocaleDateString("pt-BR"),
+
+              // --- DADOS DO VENDEDOR ---
+              vendedor: vendedorId,
+              vendedorNome:
+                route.params.vendedorNome || "Vendedor não informado",
+
+              // --- DADOS DO CLIENTE (Objeto completo vindo da DetalhesCliente) ---
+              cliente: cliente, // Aqui já terá nome, cnpj, endereco, bairro, etc.
               loja,
+
+              // --- TABELA DE PREÇO ---
               tabela,
+              tabelaDesc: route.params.tabelaDesc || "Tabela não informada",
+
+              // --- CONDIÇÃO DE PAGAMENTO ---
               condicaoPagamento: condicaoSel,
+              condicaoDesc: descCondicao,
               formaPagto,
               valorTotal: tratarValor(valorTotal),
               saldoFlex: saldoFlex,
+              carrinho: carrinho, // Mantemos para conferência de quantidades no PDF
+
               itens: itensRevisao.map((item: any) => {
                 const d = carrinho[item.codpro];
-                const nPrecoVenda = tratarValor(d.precoVenda);
-                const nValorFlex = tratarValor(d.valorFlex || d.valorDesconto);
-                const nPrecoTabela = tratarValor(d.precoTabela);
-
                 return {
                   codpro: item.codpro,
                   desc: item.desc,
                   qtd: Number(d.qtd),
-                  precoVenda: Number(nPrecoVenda.toFixed(2)),
-                  precoTabela: Number(nPrecoTabela.toFixed(2)),
-                  valorFlex: Number(nValorFlex.toFixed(2)),
+                  precoVenda: Number(tratarValor(d.precoVenda).toFixed(2)),
+                  precoTabela: Number(tratarValor(d.precoTabela).toFixed(2)),
+                  valorFlex: Number(
+                    tratarValor(d.valorFlex || d.valorDesconto).toFixed(2),
+                  ),
                   percDesconto: d.percDesconto,
                   valorDesconto: d.valorDesconto,
                 };
@@ -290,9 +224,6 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
               JSON.stringify(lista),
             );
 
-            // --- MELHOR PRÁTICA: RESET DE NAVEGAÇÃO APÓS SUCESSO ---
-            // Isso limpa a pilha e evita que o 'beforeRemove' da tela anterior
-            // veja dados sujos.
             Alert.alert("Sucesso", "Pedido salvo offline!", [
               {
                 text: "OK",
@@ -303,7 +234,7 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
                       routes: [
                         {
                           name: "Clientes",
-                          params: { vendedorId: vendedorId }, // O params tem que ser aqui dentro!
+                          params: { vendedorId: vendedorId },
                         },
                       ],
                     }),
@@ -392,15 +323,7 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
                 />
               </Surface>
             </View>
-            <Button
-              mode="outlined"
-              icon="file-pdf-box"
-              onPress={gerarPDFCotacao} // Função que criamos antes
-              style={styles.btnPdf}
-              textColor="#005492"
-            >
-              GERAR COTAÇÃO (PDF)
-            </Button>
+
             <Button
               mode="contained"
               onPress={finalizarPedido}

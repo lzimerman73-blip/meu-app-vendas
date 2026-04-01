@@ -11,7 +11,7 @@ import api from "../api/api";
 
 const SelecaoTabelaScreen = ({ route, navigation }: any) => {
   // Recebemos o cliente e loja para passar adiante no fluxo do pedido
-  const { cliente, loja, vendedorId, saldoFlex } = route.params;
+  const { cliente, loja, vendedorId, vendedorNome, saldoFlex } = route.params;
 
   const [loading, setLoading] = useState(true);
   const [tabelas, setTabelas] = useState([]);
@@ -50,14 +50,12 @@ const SelecaoTabelaScreen = ({ route, navigation }: any) => {
       t.id.includes(searchQuery),
   );
 
-  const selecionarTabela = (idTabela: string) => {
-    // Navega para a próxima etapa (Seleção de Produtos)
+  // 1. Alteramos para receber o objeto 'item' completo da lista
+  const selecionarTabela = (item: any) => {
     navigation.navigate("SelecaoProdutos", {
-      cliente,
-      loja,
-      tabela: idTabela,
-      vendedorId,
-      saldoFlex,
+      ...route.params, // <--- ISSO AQUI copia cliente, loja, vendedorId, vendedorNome e saldoFlex AUTOMATICAMENTE
+      tabela: item.id, // Aqui você define o ID da tabela
+      tabelaDesc: item.descricao, // Aqui você envia a descrição para o PDF
     });
   };
 
@@ -96,7 +94,7 @@ const SelecaoTabelaScreen = ({ route, navigation }: any) => {
               <List.Icon {...props} icon="file-table-outline" color="#005492" />
             )}
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
-            onPress={() => selecionarTabela(item.id)}
+            onPress={() => selecionarTabela(item)}
             titleStyle={styles.tituloTabela}
           />
         )}

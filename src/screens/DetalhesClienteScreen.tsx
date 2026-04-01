@@ -219,6 +219,39 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
     return c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
   };
 
+  // --- NOVA FUNÇÃO: INICIAR ATENDIMENTO ---
+  const handleNovoPedido = () => {
+    const agora = new Date();
+
+    // Mapeamento opcional: converte o texto do botão para o código do Protheus (ZF4_TIPO)
+    // Ex: "gps" vira "1", "fone" vira "2". Altere conforme a regra do seu Protheus!
+    const mapaTipos: { [key: string]: string } = {
+      gps: "GPS",
+      fone: "FONE",
+      wpp: "WHATSAPP",
+      pros: "PROSPECÇÃO",
+    };
+
+    const codigoTipo = mapaTipos[tipoAtendimento] || "1";
+
+    navigation.navigate("SelecaoTabela", {
+      cliente: dados?.dados_cadastrais,
+      loja,
+      vendedorId,
+      vendedorNome: dados?.vendedor?.nome,
+      saldoFlex: dados?.saldoFlex || 0,
+
+      // Enviamos o bloco de atendimento com a hora exata do clique
+      atendimento: {
+        dataInic: agora.toISOString().split("T")[0].replace(/-/g, ""), // Formato YYYYMMDD
+        horaInic: agora
+          .toLocaleTimeString("pt-BR", { hour12: false })
+          .substring(0, 5), // Formato HH:MM
+        tipo: codigoTipo, // Envia o código em vez de "gps" ou "wpp"
+      },
+    });
+  };
+
   useFocusEffect(
     useCallback(() => {
       const checarPedidosOffline = async () => {
@@ -245,43 +278,58 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
 
   useEffect(() => {
     const carregarDetalhes = async () => {
+      // 1. Validação de segurança: se não tiver os dados básicos, não chama a API
+      if (!codCli || !loja || !vendedorId) {
+        console.log("Aguardando parâmetros...", { codCli, loja, vendedorId });
+        return;
+      }
+
       try {
         setLoading(true);
-        const response = await api.get(
-          `/api/getdetalhamentocliente?cliente=${codCli}&loja=${loja}&vendedor=${vendedorId}`,
-        );
+        // 2. Verifique se o nome do parâmetro na sua API do Protheus é 'vendedor' mesmo
+        const url = `/api/getdetalhamentocliente?cliente=${codCli}&loja=${loja}&vendedor=${vendedorId}`;
+
+        const response = await api.get(url);
         const resData = response.data;
-        setDados(resData);
 
-        if (resData.financeiro) {
-          const hoje = new Date();
-          hoje.setHours(0, 0, 0, 0);
-          const vencidos: any[] = [];
-          const aVencer: any[] = [];
+        if (resData && Object.keys(resData).length > 0) {
+          setDados(resData);
 
-          resData.financeiro.forEach((tit: any) => {
-            const partes = tit.vencimento.split("/");
-            const dtVenc = new Date(
-              parseInt(partes[2]),
-              parseInt(partes[1]) - 1,
-              parseInt(partes[0]),
-            );
-            if (dtVenc < hoje) vencidos.push(tit);
-            else aVencer.push(tit);
-          });
+          if (resData.financeiro) {
+            const hoje = new Date();
+            hoje.setHours(0, 0, 0, 0);
+            const vencidos: any[] = [];
+            const aVencer: any[] = [];
 
-          setTitulosVencidos(vencidos);
-          setTitulosAVencer(aVencer);
-          setTemAtraso(vencidos.length > 0);
+            resData.financeiro.forEach((tit: any) => {
+              const partes = tit.vencimento.split("/");
+              const dtVenc = new Date(
+                parseInt(partes[2]),
+                parseInt(partes[1]) - 1,
+                parseInt(partes[0]),
+              );
+              if (dtVenc < hoje) vencidos.push(tit);
+              else aVencer.push(tit);
+            });
+
+            setTitulosVencidos(vencidos);
+            setTitulosAVencer(aVencer);
+            setTemAtraso(vencidos.length > 0);
+          }
+        } else {
+          console.warn("API retornou vazio para:", url);
         }
       } catch (error) {
         console.error("Erro ao buscar detalhes:", error);
+        Alert.alert("Erro", "Não foi possível carregar os dados do cliente.");
       } finally {
         setLoading(false);
       }
     };
+
     carregarDetalhes();
-  }, [codCli, loja]);
+    // 3. ADICIONE vendedorId AQUI NAS DEPENDÊNCIAS
+  }, [codCli, loja, vendedorId]);
 
   if (loading)
     return (
@@ -296,7 +344,10 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
             CLIENTE EM ATRASO
           </Badge>
         )}
-        <Headline style={styles.bold}>{dados?.dados_cadastrais?.nome}</Headline>
+
+        <Headline style={styles.bold}>
+          {dados?.dados_cadastrais?.nome || "Nome não informado"}
+        </Headline>
 
         <View style={styles.containerDadosHorizontal}>
           <Text style={styles.textoLinhaUnica}>
@@ -350,15 +401,7 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
           mode="contained"
           icon="cart-plus"
           disabled={!distanciaOk || localizando || atualizandoGps}
-          onPress={() =>
-            navigation.navigate("SelecaoTabela", {
-              cliente,
-              loja,
-              vendedorId,
-              tipoAtendimento,
-              saldoFlex: dados?.saldoFlex || 0,
-            })
-          }
+          onPress={handleNovoPedido}
           style={[
             styles.btnNovoPedido,
             temAtraso && distanciaOk && { backgroundColor: "#d32f2f" },
