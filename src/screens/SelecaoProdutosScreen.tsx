@@ -28,6 +28,10 @@ import { useFocusEffect } from "@react-navigation/native";
 import api from "../api/api";
 
 const SelecaoProdutosScreen = ({ route, navigation }: any) => {
+  console.log(
+    "DEBUG 2 - Chegou na Seleção Produtos:",
+    route.params?.atendimento,
+  );
   const {
     cliente,
     loja,

@@ -244,9 +244,7 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
       // Enviamos o bloco de atendimento com a hora exata do clique
       atendimento: {
         dataInic: agora.toISOString().split("T")[0].replace(/-/g, ""), // Formato YYYYMMDD
-        horaInic: agora
-          .toLocaleTimeString("pt-BR", { hour12: false })
-          .substring(0, 5), // Formato HH:MM
+        horaInic: agora.toLocaleTimeString("pt-BR", { hour12: false }),
         tipo: codigoTipo, // Envia o código em vez de "gps" ou "wpp"
       },
     });

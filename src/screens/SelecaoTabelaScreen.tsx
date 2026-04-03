@@ -10,6 +10,8 @@ import { List, Searchbar, Text, Surface, Divider } from "react-native-paper";
 import api from "../api/api";
 
 const SelecaoTabelaScreen = ({ route, navigation }: any) => {
+  console.log("DEBUG 1 - Chegou na Seleção Tabela:", route.params?.atendimento);
+
   // Recebemos o cliente e loja para passar adiante no fluxo do pedido
   const { cliente, loja, vendedorId, vendedorNome, saldoFlex } = route.params;
 

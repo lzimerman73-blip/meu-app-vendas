@@ -387,6 +387,11 @@ const PedidosOfflineScreen = ({ navigation }: any) => {
         formaPagto: pedido.formaPagto || "BOLETO",
         // Tratando também o valor total do cabeçalho por segurança
         valorFlex: Number(tratarValor(pedido.valorFlexTotal || 0).toFixed(2)),
+        dataini: pedido.dataini || "",
+        horaini: pedido.horaini || "",
+        datafim: pedido.datafim || "",
+        horafim: pedido.horafim || "",
+        tipoAten: pedido.tipoAten || "APP",
 
         itens: pedido.itens.map((item: any) => {
           const nPreco = tratarValor(item.precoVenda || item.preco);
@@ -428,6 +433,11 @@ const PedidosOfflineScreen = ({ navigation }: any) => {
           text: "Enviar",
           onPress: async () => {
             setSincronizando(true);
+            // LOG 3: Ver o que está saindo do App rumo ao Protheus
+            console.log(
+              "DEBUG - Enviando este JSON para o Protheus:",
+              JSON.stringify(pedido, null, 2),
+            );
             const res = await enviarParaProtheus(pedido);
             setSincronizando(false);
 

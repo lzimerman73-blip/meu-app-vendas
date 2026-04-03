@@ -47,6 +47,7 @@ interface CondicaoPagto {
 }
 
 const RevisaoPedidoScreen = ({ route, navigation }: any) => {
+  console.log("DEBUG 3 - Chegou na Revisão:", route.params?.atendimento);
   const {
     carrinho,
     cliente,
@@ -59,6 +60,9 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
     saldoFlex,
     atendimento,
   } = route.params;
+
+  // LOG 1: Verificar se a tela recebeu o atendimento do produto/tabela
+  console.log("DEBUG - Atendimento recebido na Revisão:", atendimento);
 
   const idVendedorEfetivo =
     vendedorId || cliente?.vendedor || dadosPedidoSalvo?.vendedor;
@@ -154,9 +158,9 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
               .toISOString()
               .split("T")[0]
               .replace(/-/g, "");
-            const horaFim = agoraFim
-              .toLocaleTimeString("pt-BR", { hour12: false })
-              .substring(0, 5);
+            const horaFim = agoraFim.toLocaleTimeString("pt-BR", {
+              hour12: false,
+            });
 
             // Buscamos a descrição da condição selecionada para o PDF
             const descCondicao =
@@ -168,6 +172,13 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
               dataCriacao:
                 dadosPedidoSalvo?.dataCriacao || new Date().toISOString(),
               data: new Date().toLocaleDateString("pt-BR"),
+
+              // --- 2. ADICIONE OS CAMPOS PARA A ZF4 AQUI ---
+              dataini: atendimento?.dataInic || "", // Veio da tela DetalhesCliente
+              horaini: atendimento?.horaInic || "", // Veio da tela DetalhesCliente
+              datafim: dataFim, // Gerado agora no clique
+              horafim: horaFim, // Gerado agora no clique
+              tipoAten: atendimento?.tipo || "", // Veio da tela DetalhesCliente
 
               // --- DADOS DO VENDEDOR ---
               vendedor: vendedorId,
@@ -207,6 +218,12 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
               }),
               status: "pendente",
             };
+
+            // LOG 2: Verificar o objeto que será salvo no celular
+            console.log(
+              "DEBUG - Objeto Novo Pedido pronto para salvar:",
+              novoPedido,
+            );
 
             const salvos = await AsyncStorage.getItem("@pedidos_offline");
             let lista = salvos ? JSON.parse(salvos) : [];
