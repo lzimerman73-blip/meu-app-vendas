@@ -6,14 +6,16 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "prebuild": "expo prebuild --clean"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.23.1",
     "@react-navigation/native": "^6.1.17",
-    "@react-navigation/native-stack": "^7.14.10",
+    "@react-navigation/native-stack": "^6.9.0",
     "@react-navigation/stack": "^6.3.29",
     "axios": "^1.6.8",
+    "decimal.js": "^10.4.3",
     "expo": "~51.0.0",
     "expo-dev-client": "~4.0.29",
     "expo-location": "~17.0.1",
@@ -24,7 +26,7 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "react": "18.2.0",
-    "react-native": "0.74.5",
+    "react-native": "0.73.6",
     "react-native-gesture-handler": "~2.16.1",
     "react-native-paper": "^5.12.3",
     "react-native-reanimated": "~3.10.1",
@@ -32,7 +34,10 @@
     "react-native-screens": "3.31.1"
   },
   "devDependencies": {
+    "@babel/core": "^7.23.0",
     "@types/react": "~18.2.45",
+    "@types/react-native": "^0.73.0",
+    "babel-preset-expo": "^10.0.0",
     "typescript": "~5.3.3"
   },
   "private": true
