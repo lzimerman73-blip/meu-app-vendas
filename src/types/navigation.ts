@@ -13,4 +13,5 @@ export type RootStackParamList = {
     tabela: string;
     produtosOriginais: any[];
   };
+  PedidosPendentes: { vendedorId: string };
 };

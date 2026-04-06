@@ -8,7 +8,8 @@ import DetalhesClienteScreen from "../screens/DetalhesClienteScreen";
 import SelecaoTabelaScreen from "../screens/SelecaoTabelaScreen";
 import SelecaoProdutosScreen from "../screens/SelecaoProdutosScreen";
 import RevisaoPedidoScreen from "../screens/RevisaoPedidoScreen";
-import PedidosOfflineScreen from "../screens/PedidosOfflineScreen"; // Esta será nossa tela de Lista
+import PedidosOfflineScreen from "../screens/PedidosOfflineScreen";
+import PedidosPendentes from "../screens/PedidosPendentes";
 import { RootStackParamList } from "../types/navigation";
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -65,14 +66,12 @@ export const Routes = () => {
           )}
         </Stack.Screen>
 
-        {/* 4. PEDIDOS OFFLINE / SALVOS: A tela que lista todos os pedidos para sincronia */}
         <Stack.Screen
           name="PedidosOffline"
           component={PedidosOfflineScreen}
           options={{ title: "Pedidos Salvos" }}
         />
 
-        {/* --- DEMAIS TELAS --- */}
         <Stack.Screen
           name="DetalhesCliente"
           component={DetalhesClienteScreen}
@@ -95,6 +94,12 @@ export const Routes = () => {
           name="RevisaoPedido"
           component={RevisaoPedidoScreen}
           options={{ title: "Resumo do Pedido" }}
+        />
+
+        <Stack.Screen
+          name="PedidosPendentes"
+          component={PedidosPendentes}
+          options={{ title: "Pedidos Pendentes", headerShown: true }}
         />
       </Stack.Navigator>
     </NavigationContainer>
