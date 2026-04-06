@@ -12,7 +12,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.leandroz.MeuAppVendas"
     },
     "android": {
       "adaptiveIcon": {
@@ -20,7 +21,14 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.leandroz.MeuAppVendas",
-      "permissions": ["INTERNET"]
+      "permissions": [
+        "INTERNET",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -29,6 +37,7 @@
       "eas": {
         "projectId": "4ff27c4a-2578-4f60-8f8a-dccca6c4e3c9"
       }
-    }
+    },
+    "owner": "leandroz"
   }
 }
