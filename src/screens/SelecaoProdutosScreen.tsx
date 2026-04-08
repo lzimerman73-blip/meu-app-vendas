@@ -189,6 +189,28 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
     return unsubscribe;
   }, [navigation]);
 
+  // ✅ FUNÇÃO 1: VALIDAR PREÇO DE VENDA AO SAIR DO CAMPO (onBlur)
+  const validarPrecoVendaOnBlur = (codpro: string, itemOriginal: any) => {
+    const prcTabela = Number(itemOriginal.preco) || 0;
+
+    setCarrinho((prev) => {
+      const item = prev[codpro];
+      if (!item) return prev;
+
+      // Converte o valor para número
+      const vNum = parseFloat(String(item.precoVenda).replace(",", ".")) || 0;
+
+      // Formata com 2 casas decimais
+      const vFormatado = vNum.toFixed(2).replace(".", ",");
+
+      return {
+        ...prev,
+        [codpro]: { ...item, precoVenda: vFormatado },
+      };
+    });
+  };
+
+  // ✅ FUNÇÃO 2: ATUALIZAR ITEM CARRINHO COM CÁLCULOS COMPLETOS
   const atualizarItemCarrinho = (
     codpro: string,
     campo: string,
@@ -210,6 +232,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
 
       let novoItem = { ...itemAtual };
 
+      // ===== TRATAMENTO DE QUANTIDADE =====
       if (campo === "qtd") {
         const incremento = valor as number;
         const novaQtd = Math.max(0, itemAtual.qtd + incremento);
@@ -235,6 +258,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
         return nCarrinho;
       }
 
+      // ===== LIMPEZA E CONVERSÃO DO VALOR =====
       let textoLimpo = String(valor).replace(/[^0-9,]/g, "");
       const partes = textoLimpo.split(",");
       if (partes.length > 2)
@@ -243,15 +267,33 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
       const vNum = parseFloat(textoLimpo.replace(",", ".")) || 0;
       let vlrDescPretendido = 0;
 
-      if (campo === "precoVenda")
-        vlrDescPretendido = Math.max(0, prcTabela - vNum);
-      else if (campo === "percDesconto")
-        vlrDescPretendido = (prcTabela * vNum) / 100;
-      else if (campo === "valorDesconto") vlrDescPretendido = vNum;
+      // ===== TRATAMENTO DO PREÇO DE VENDA =====
+      if (campo === "precoVenda") {
+        // ✅ CORREÇÃO PRINCIPAL: Quando preço de venda é MAIOR que tabela
+        if (vNum > prcTabela) {
+          // Calcula o acréscimo (valor flex negativo para crédito no Protheus)
+          const acrescimo = vNum - prcTabela;
+          novoItem.precoVenda = textoLimpo;
+          novoItem.valorDesconto = "0,00";
+          novoItem.percDesconto = "0,00";
+          // ✅ Valor flex NEGATIVO para representar crédito no Protheus
+          novoItem.valorFlex = (acrescimo * -1).toFixed(2).replace(".", ",");
+          return { ...prev, [codpro]: novoItem };
+        }
 
+        // Quando preço de venda é MENOR ou IGUAL à tabela
+        vlrDescPretendido = Math.max(0, prcTabela - vNum);
+      } else if (campo === "percDesconto") {
+        vlrDescPretendido = (prcTabela * vNum) / 100;
+      } else if (campo === "valorDesconto") {
+        vlrDescPretendido = vNum;
+      }
+
+      // ===== TRATAMENTO DE DESCONTO (% ou Valor) =====
       if (campo !== "precoVenda") {
         let valorFoiCorrigido = false;
 
+        // Verifica limite de desconto (15%)
         if (vlrDescPretendido > limiteDescontoItem + 0.001) {
           Alert.alert(
             "Limite Ajustado",
@@ -261,6 +303,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
           valorFoiCorrigido = true;
         }
 
+        // Calcula gasto em outros itens
         const gastoOutrosItens = Object.keys(prev)
           .filter((key) => key !== codpro)
           .reduce(
@@ -272,9 +315,11 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
             0,
           );
 
+        // Calcula gasto total com este item
         const gastoTotalComEste =
           gastoOutrosItens + vlrDescPretendido * (itemAtual.qtd || 1);
 
+        // Verifica saldo flex disponível
         if (gastoTotalComEste > (saldoFlex || 0) + 0.001) {
           if (!valorFoiCorrigido)
             Alert.alert(
@@ -292,6 +337,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
           valorFoiCorrigido = true;
         }
 
+        // Calcula percentual, valor e preço final
         const percFinal =
           prcTabela > 0
             ? ((vlrDescPretendido / prcTabela) * 100)
@@ -303,6 +349,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
           .toFixed(2)
           .replace(".", ",");
 
+        // Atualiza campos conforme o tipo de entrada
         if (campo === "percDesconto") {
           novoItem.percDesconto = valorFoiCorrigido ? percFinal : textoLimpo;
           novoItem.valorDesconto = valorFinal;
@@ -312,42 +359,12 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
           novoItem.percDesconto = percFinal;
           novoItem.precoVenda = precoFinal;
         }
+
+        // ✅ Valor flex sempre igual ao valor desconto (para descontos)
         novoItem.valorFlex = novoItem.valorDesconto;
-      } else {
-        novoItem.precoVenda = textoLimpo;
-        if (vNum >= prcTabela) {
-          novoItem.valorDesconto = "0,00";
-          novoItem.percDesconto = "0,00";
-          novoItem.valorFlex = "0,00";
-        } else {
-          novoItem.valorDesconto = vlrDescPretendido
-            .toFixed(2)
-            .replace(".", ",");
-          novoItem.percDesconto =
-            prcTabela > 0
-              ? ((vlrDescPretendido / prcTabela) * 100)
-                  .toFixed(2)
-                  .replace(".", ",")
-              : "0,00";
-          novoItem.valorFlex = novoItem.valorDesconto;
-        }
       }
 
       return { ...prev, [codpro]: novoItem };
-    });
-  };
-
-  const validarPrecoVendaOnBlur = (codpro: string, itemOriginal: any) => {
-    const prcTabela = Number(itemOriginal.preco) || 0;
-    setCarrinho((prev) => {
-      const item = prev[codpro];
-      if (!item) return prev;
-      const vNum = parseFloat(String(item.precoVenda).replace(",", ".")) || 0;
-
-      return {
-        ...prev,
-        [codpro]: { ...item, precoVenda: vNum.toFixed(2).replace(".", ",") },
-      };
     });
   };
 
