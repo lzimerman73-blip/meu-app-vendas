@@ -392,6 +392,7 @@ const PedidosOfflineScreen = ({ navigation }: any) => {
         datafim: pedido.datafim || "",
         horafim: pedido.horafim || "",
         tipoAten: pedido.tipoAten || "APP",
+        observacaoNF: pedido.observacaoNF || "",
 
         itens: pedido.itens.map((item: any) => {
           const nPreco = tratarValor(item.precoVenda || item.preco);

@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   StatusBar,
+  TextInput,
 } from "react-native";
 import {
   Text,
@@ -76,6 +77,15 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
     dadosPedidoSalvo?.formaPagto || "",
   );
 
+  // ✅ NOVOS ESTADOS PARA OBSERVAÇÃO NF
+  const [modalObservacaoVisivel, setModalObservacaoVisivel] =
+    useState<boolean>(false);
+  const [modalDigitacaoVisivel, setModalDigitacaoVisivel] =
+    useState<boolean>(false);
+  const [observacaoNF, setObservacaoNF] = useState<string>(
+    dadosPedidoSalvo?.observacaoNF || "",
+  );
+
   const [modalFormaVisivel, setModalFormaVisivel] = useState<boolean>(false);
   const [modalVisivel, setModalVisivel] = useState<boolean>(false);
   const [busca, setBusca] = useState<string>("");
@@ -130,6 +140,29 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
 
     carregarCondicoes();
   }, [idVendedorEfetivo]);
+
+  // ✅ FUNÇÃO PARA PERGUNTAR SOBRE OBSERVAÇÃO NF
+  const perguntarObservacaoNF = () => {
+    setModalObservacaoVisivel(true);
+  };
+
+  // ✅ FUNÇÃO PARA ABRIR CAMPO DE DIGITAÇÃO
+  const abrirCampoObservacao = () => {
+    setModalObservacaoVisivel(false);
+    setModalDigitacaoVisivel(true);
+  };
+
+  // ✅ FUNÇÃO PARA SALVAR OBSERVAÇÃO E FINALIZAR
+  const salvarObservacaoEFinalizar = () => {
+    setModalDigitacaoVisivel(false);
+    finalizarPedido();
+  };
+
+  // ✅ FUNÇÃO PARA PULAR OBSERVAÇÃO E FINALIZAR
+  const pularObservacaoEFinalizar = () => {
+    setModalObservacaoVisivel(false);
+    finalizarPedido();
+  };
 
   const finalizarPedido = async () => {
     if (!condicaoSel || !formaPagto) {
@@ -200,6 +233,9 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
               valorTotal: tratarValor(valorTotal),
               saldoFlex: saldoFlex,
               carrinho: carrinho, // Mantemos para conferência de quantidades no PDF
+
+              // ✅ ADICIONE A OBSERVAÇÃO NF AQUI
+              observacaoNF: observacaoNF || "", // Campo para sincronizar com Protheus
 
               itens: itensRevisao.map((item: any) => {
                 const d = carrinho[item.codpro];
@@ -339,11 +375,21 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
                   )}
                 />
               </Surface>
+
+              {/* ✅ EXIBIR OBSERVAÇÃO NF SE HOUVER */}
+              {observacaoNF && (
+                <View style={styles.observacaoBox}>
+                  <Text style={styles.label}>Observação para NF</Text>
+                  <Surface style={styles.observacaoDisplay}>
+                    <Text style={styles.observacaoText}>{observacaoNF}</Text>
+                  </Surface>
+                </View>
+              )}
             </View>
 
             <Button
               mode="contained"
-              onPress={finalizarPedido}
+              onPress={perguntarObservacaoNF}
               style={styles.btnFinalizar}
             >
               GRAVAR PEDIDO
@@ -353,6 +399,76 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
       </ScrollView>
 
       <Portal>
+        {/* ✅ MODAL PERGUNTANDO SOBRE OBSERVAÇÃO NF */}
+        <Modal
+          visible={modalObservacaoVisivel}
+          onDismiss={() => setModalObservacaoVisivel(false)}
+          contentContainerStyle={styles.modalObservacaoStyle}
+        >
+          <Title style={{ textAlign: "center", marginBottom: 20 }}>
+            Observação para Nota Fiscal
+          </Title>
+          <Text style={{ textAlign: "center", marginBottom: 20, fontSize: 16 }}>
+            Deseja incluir uma observação para a Nota Fiscal?
+          </Text>
+          <View style={styles.modalButtonsContainer}>
+            <Button
+              mode="outlined"
+              onPress={pularObservacaoEFinalizar}
+              style={styles.modalButton}
+            >
+              Não
+            </Button>
+            <Button
+              mode="contained"
+              onPress={abrirCampoObservacao}
+              style={styles.modalButton}
+              buttonColor="#005492"
+            >
+              Sim
+            </Button>
+          </View>
+        </Modal>
+
+        {/* ✅ MODAL PARA DIGITAÇÃO DA OBSERVAÇÃO */}
+        <Modal
+          visible={modalDigitacaoVisivel}
+          onDismiss={() => setModalDigitacaoVisivel(false)}
+          contentContainerStyle={styles.modalDigitacaoStyle}
+        >
+          <Title style={{ textAlign: "center", marginBottom: 20 }}>
+            Digite a Observação
+          </Title>
+          <TextInput
+            style={styles.textInputObservacao}
+            placeholder="Digite a observação para a Nota Fiscal..."
+            placeholderTextColor="#999"
+            multiline
+            numberOfLines={5}
+            value={observacaoNF}
+            onChangeText={setObservacaoNF}
+            textAlignVertical="top"
+          />
+          <View style={styles.modalButtonsContainer}>
+            <Button
+              mode="outlined"
+              onPress={() => setModalDigitacaoVisivel(false)}
+              style={styles.modalButton}
+            >
+              Cancelar
+            </Button>
+            <Button
+              mode="contained"
+              onPress={salvarObservacaoEFinalizar}
+              style={styles.modalButton}
+              buttonColor="#2E7D32"
+            >
+              Salvar
+            </Button>
+          </View>
+        </Modal>
+
+        {/* MODAL CONDIÇÕES DE PAGAMENTO */}
         <Modal
           visible={modalVisivel}
           onDismiss={() => setModalVisivel(false)}
@@ -381,6 +497,7 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
           </ScrollView>
         </Modal>
 
+        {/* MODAL FORMA DE PAGAMENTO */}
         <Modal
           visible={modalFormaVisivel}
           onDismiss={() => setModalFormaVisivel(false)}
@@ -440,6 +557,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DDD",
   },
+  observacaoBox: { marginTop: 20 },
+  observacaoDisplay: {
+    borderRadius: 8,
+    backgroundColor: "#F0F8FF",
+    borderWidth: 1,
+    borderColor: "#005492",
+    padding: 12,
+  },
+  observacaoText: {
+    fontSize: 14,
+    color: "#333",
+    lineHeight: 20,
+  },
   btnFinalizar: { margin: 15, backgroundColor: "#2E7D32", paddingVertical: 5 },
   modalStyle: {
     backgroundColor: "white",
@@ -453,11 +583,38 @@ const styles = StyleSheet.create({
     margin: 40,
     borderRadius: 10,
   },
-  btnPdf: {
-    marginHorizontal: 15,
-    marginTop: 10,
-    borderColor: "#005492",
-    borderWidth: 1.5,
+  // ✅ NOVOS ESTILOS PARA MODAIS DE OBSERVAÇÃO
+  modalObservacaoStyle: {
+    backgroundColor: "white",
+    padding: 25,
+    margin: 30,
+    borderRadius: 12,
+    elevation: 5,
+  },
+  modalDigitacaoStyle: {
+    backgroundColor: "white",
+    padding: 25,
+    margin: 20,
+    borderRadius: 12,
+    elevation: 5,
+  },
+  textInputObservacao: {
+    borderWidth: 1,
+    borderColor: "#DDD",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+    fontSize: 14,
+    color: "#333",
+    backgroundColor: "#F8F9FA",
+  },
+  modalButtonsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  modalButton: {
+    flex: 1,
   },
 });
 
