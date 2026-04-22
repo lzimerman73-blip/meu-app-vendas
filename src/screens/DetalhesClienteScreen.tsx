@@ -38,7 +38,7 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
   // --- NOVOS ESTADOS PARA GPS E ATENDIMENTO ---
   const [tipoAtendimento, setTipoAtendimento] = useState("gps");
   const [localizando, setLocalizando] = useState(false);
-  const [atualizandoGps, setAtualizandoGps] = useState(false); // Novo estado de carregamento do botão de GPS
+  const [atualizandoGps, setAtualizandoGps] = useState(false);
   const [distanciaOk, setDistanciaOk] = useState(false);
   const [distanciaMetros, setDistanciaMetros] = useState<number | null>(null);
 
@@ -62,7 +62,6 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
     return R * c;
   };
 
-  // --- NOVA FUNÇÃO: SALVAR LATITUDE/LONGITUDE NO PROTHEUS ---
   const cadastrarLocalizacaoAtual = async (locationPrevia?: any) => {
     setAtualizandoGps(true);
     try {
@@ -91,7 +90,6 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
         longitude: novaLon,
       });
 
-      // Atualiza os dados locais
       setDados((prev: any) => ({
         ...prev,
         dados_cadastrais: {
@@ -107,12 +105,10 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
       Alert.alert("Erro", "Não foi possível gravar a localização.");
     } finally {
       setAtualizandoGps(false);
-      setLocalizando(false); // <--- ADICIONE ESTA LINHA para garantir que o círculo pare
+      setLocalizando(false);
     }
   };
 
-  // --- LÓGICA DE VERIFICAÇÃO DE GPS ---
-  // --- LÓGICA DE VERIFICAÇÃO DE GPS ---
   const verificarLocalizacao = async () => {
     if (!dados || tipoAtendimento !== "gps") {
       setDistanciaOk(true);
@@ -129,7 +125,7 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
           "A permissão de localização é obrigatória para atendimentos presenciais.",
         );
         setDistanciaOk(false);
-        return; // Vai cair no finally e desligar o loading
+        return;
       }
 
       const location = await Location.getCurrentPositionAsync({
@@ -170,12 +166,10 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
       Alert.alert("Erro GPS", "Não foi possível obter sua localização atual.");
       setDistanciaOk(false);
     } finally {
-      // FORÇA o desligamento do loading independente do que aconteceu acima
       setLocalizando(false);
     }
   };
 
-  // Sempre que mudar o cliente ou loja via navegação, reseta os dados e loadings
   useEffect(() => {
     setDados(null);
     setLoading(true);
@@ -194,9 +188,8 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
         setDistanciaMetros(null);
       }
     }
-  }, [tipoAtendimento, dados]); // Se os dados mudarem (como após atualizar a latitude), ele roda o GPS de novo automaticamente!
+  }, [tipoAtendimento, dados]);
 
-  // --- FORMATAÇÕES ---
   const formatarMoeda = (valor: any) => {
     if (valor === null || valor === undefined) return "R$ 0,00";
     let limpo = valor;
@@ -219,19 +212,14 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
     return c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
   };
 
-  // --- NOVA FUNÇÃO: INICIAR ATENDIMENTO ---
   const handleNovoPedido = () => {
     const agora = new Date();
-
-    // Mapeamento opcional: converte o texto do botão para o código do Protheus (ZF4_TIPO)
-    // Ex: "gps" vira "1", "fone" vira "2". Altere conforme a regra do seu Protheus!
     const mapaTipos: { [key: string]: string } = {
       gps: "GPS",
       fone: "FONE",
       wpp: "WHATSAPP",
       pros: "PROSPECÇÃO",
     };
-
     const codigoTipo = mapaTipos[tipoAtendimento] || "1";
 
     navigation.navigate("SelecaoTabela", {
@@ -240,12 +228,10 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
       vendedorId,
       vendedorNome: dados?.vendedor?.nome,
       saldoFlex: dados?.saldoFlex || 0,
-
-      // Enviamos o bloco de atendimento com a hora exata do clique
       atendimento: {
-        dataInic: agora.toISOString().split("T")[0].replace(/-/g, ""), // Formato YYYYMMDD
+        dataInic: agora.toISOString().split("T")[0].replace(/-/g, ""),
         horaInic: agora.toLocaleTimeString("pt-BR", { hour12: false }),
-        tipo: codigoTipo, // Envia o código em vez de "gps" ou "wpp"
+        tipo: codigoTipo,
       },
     });
   };
@@ -276,23 +262,16 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
 
   useEffect(() => {
     const carregarDetalhes = async () => {
-      // 1. Validação de segurança: se não tiver os dados básicos, não chama a API
-      if (!codCli || !loja || !vendedorId) {
-        console.log("Aguardando parâmetros...", { codCli, loja, vendedorId });
-        return;
-      }
+      if (!codCli || !loja || !vendedorId) return;
 
       try {
         setLoading(true);
-        // 2. Verifique se o nome do parâmetro na sua API do Protheus é 'vendedor' mesmo
         const url = `/api/getdetalhamentocliente?cliente=${codCli}&loja=${loja}&vendedor=${vendedorId}`;
-
         const response = await api.get(url);
         const resData = response.data;
 
         if (resData && Object.keys(resData).length > 0) {
           setDados(resData);
-
           if (resData.financeiro) {
             const hoje = new Date();
             hoje.setHours(0, 0, 0, 0);
@@ -314,8 +293,6 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
             setTitulosAVencer(aVencer);
             setTemAtraso(vencidos.length > 0);
           }
-        } else {
-          console.warn("API retornou vazio para:", url);
         }
       } catch (error) {
         console.error("Erro ao buscar detalhes:", error);
@@ -324,15 +301,30 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
         setLoading(false);
       }
     };
-
     carregarDetalhes();
-    // 3. ADICIONE vendedorId AQUI NAS DEPENDÊNCIAS
   }, [codCli, loja, vendedorId]);
 
   if (loading)
     return (
       <ActivityIndicator style={{ flex: 1 }} size="large" color="#005492" />
     );
+
+  // --- NORMALIZAÇÃO DE LISTAS PARA ACCORDIONS ---
+  const listaPedidos = Array.isArray(dados?.pedidos)
+    ? dados.pedidos
+    : Array.isArray(dados?.ultimo_pedido)
+    ? dados.ultimo_pedido
+    : dados?.ultimo_pedido
+    ? [dados.ultimo_pedido]
+    : [];
+
+  const listaNotas = Array.isArray(dados?.notas_fiscais)
+    ? dados.notas_fiscais
+    : Array.isArray(dados?.ultima_nf)
+    ? dados.ultima_nf
+    : dados?.ultima_nf
+    ? [dados.ultima_nf]
+    : [];
 
   return (
     <ScrollView style={styles.container}>
@@ -342,11 +334,9 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
             CLIENTE EM ATRASO
           </Badge>
         )}
-
         <Headline style={styles.bold}>
           {dados?.dados_cadastrais?.nome || "Nome não informado"}
         </Headline>
-
         <View style={styles.containerDadosHorizontal}>
           <Text style={styles.textoLinhaUnica}>
             {formatarCNPJ(dados?.dados_cadastrais?.cnpj)}
@@ -356,7 +346,6 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
             ({dados?.dados_cadastrais?.ddd}) {dados?.dados_cadastrais?.telefone}
           </Text>
         </View>
-
         <Text style={styles.cnpjTexto}>{dados?.dados_cadastrais?.email}</Text>
       </Surface>
 
@@ -373,7 +362,6 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
           ]}
           style={styles.segmented}
         />
-
         {tipoAtendimento === "gps" && (
           <View style={styles.statusGps}>
             {localizando || atualizandoGps ? (
@@ -394,7 +382,6 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
             )}
           </View>
         )}
-
         <Button
           mode="contained"
           icon="cart-plus"
@@ -493,7 +480,6 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
             ))}
           </View>
         )}
-
         {titulosAVencer.length > 0 && (
           <View>
             <List.Subheader style={{ color: "#005492", fontWeight: "bold" }}>
@@ -518,61 +504,74 @@ const DetalhesClienteScreen = ({ route, navigation }: any) => {
       <Divider />
 
       <List.Accordion
-        title="Último Pedido Realizado"
+        title="Histórico de Pedidos"
         left={(p) => <List.Icon {...p} icon="cart-outline" />}
       >
-        <View style={styles.innerPadding}>
-          <Text style={styles.bold}>
-            Pedido: {dados?.ultimo_pedido?.numero}
-          </Text>
-          <Caption>Condição: {dados?.ultimo_pedido?.condicao}</Caption>
-          <Divider style={styles.spacingDivider} />
-          {dados?.ultimo_pedido?.itens
-            ?.slice()
-            ?.sort((a: any, b: any) =>
-              a.item.localeCompare(b.item, undefined, { numeric: true }),
-            )
-            ?.map((item: any, i: number) => (
-              <List.Item
-                key={i}
-                title={item.produto}
-                titleStyle={styles.codigoProduto}
-                description={`${item.desc}\nItem: ${item.item} | Qtd: ${item.qtd} | Unit: ${formatarMoeda(item.valor)}`}
-                descriptionNumberOfLines={3}
-                descriptionStyle={styles.descricaoProduto}
-                left={(p) => <List.Icon {...p} icon="package-variant" />}
-              />
-            ))}
-        </View>
+        {listaPedidos.length > 0 ? (
+          listaPedidos.map((pedido: any, index: number) => (
+            <List.Accordion
+              key={`pedido-${index}`}
+              title={`Pedido: ${pedido.numero}`}
+              description={`Condição: ${pedido.condicao}`}
+              titleStyle={styles.bold}
+              style={{ paddingLeft: 15, backgroundColor: "#fafafa" }}
+              left={(p) => <List.Icon {...p} icon="package-variant-closed" />}
+            >
+              <View style={styles.innerPadding}>
+                {pedido.itens?.map((item: any, i: number) => (
+                  <List.Item
+                    key={`item-${i}`}
+                    title={item.produto}
+                    titleStyle={styles.codigoProduto}
+                    description={`${item.desc}\nItem: ${item.item} | Qtd: ${item.qtd} | Unit: ${formatarMoeda(item.valor)}`}
+                    descriptionNumberOfLines={3}
+                    descriptionStyle={styles.descricaoProduto}
+                    left={(p) => <List.Icon {...p} icon="package-variant" />}
+                  />
+                ))}
+              </View>
+            </List.Accordion>
+          ))
+        ) : (
+          <List.Item title="Nenhum pedido encontrado" />
+        )}
       </List.Accordion>
 
       <Divider />
 
-      {/* --- SEÇÃO: ÚLTIMA NOTA FISCAL --- */}
+      {/* --- SEÇÃO DE NOTAS FISCAIS AGRUPADAS --- */}
       <List.Accordion
-        title="Última Nota Fiscal"
-        left={(p) => <List.Icon {...p} icon="file-document-outline" />}
+        title="Histórico de Notas Fiscais"
+        left={(p) => <List.Icon {...p} icon="receipt" />}
       >
-        <View style={styles.innerPadding}>
-          <Text style={styles.bold}>NF: {dados?.ultima_nf?.numero}</Text>
-          <Text style={styles.textoPequeno}>
-            Emissão: {dados?.ultima_nf?.emissao} | Total:{" "}
-            {formatarMoeda(dados?.ultima_nf?.total)}
-          </Text>
-          <Divider style={styles.spacingDivider} />
-          {dados?.ultima_nf?.itens?.map((item: any, i: number) => (
-            <React.Fragment key={i}>
-              <List.Item
-                title={item.produto}
-                titleStyle={styles.codigoProduto}
-                description={`${item.desc}\nQtd: ${item.qtd} | Total: ${formatarMoeda(item.valor)}`}
-                descriptionNumberOfLines={3}
-                descriptionStyle={styles.descricaoProduto}
-              />
-              {i < dados.ultima_nf.itens.length - 1 && <Divider />}
-            </React.Fragment>
-          ))}
-        </View>
+        {listaNotas.length > 0 ? (
+          listaNotas.map((nf: any, index: number) => (
+            <List.Accordion
+              key={`nf-${index}`}
+              title={`NF: ${nf.numero}`}
+              description={`Emissão: ${nf.emissao} | Total: ${formatarMoeda(nf.total)}`}
+              titleStyle={styles.bold}
+              style={{ paddingLeft: 15, backgroundColor: "#fafafa" }}
+              left={(p) => <List.Icon {...p} icon="file-document-outline" />}
+            >
+              <View style={styles.innerPadding}>
+                {nf.itens?.map((item: any, i: number) => (
+                  <List.Item
+                    key={`nf-item-${i}`}
+                    title={item.produto}
+                    titleStyle={styles.codigoProduto}
+                    description={`${item.desc}\nQtd: ${item.qtd} | Valor: ${formatarMoeda(item.valor)}`}
+                    descriptionNumberOfLines={3}
+                    descriptionStyle={styles.descricaoProduto}
+                    left={(p) => <List.Icon {...p} icon="package-variant" />}
+                  />
+                ))}
+              </View>
+            </List.Accordion>
+          ))
+        ) : (
+          <List.Item title="Nenhuma nota fiscal encontrada" />
+        )}
       </List.Accordion>
 
       <Divider />
@@ -649,21 +648,14 @@ const styles = StyleSheet.create({
     flexWrap: "nowrap",
     marginVertical: 5,
   },
-  textoLinhaUnica: {
-    fontSize: 13,
-    color: "#666",
-  },
+  textoLinhaUnica: { fontSize: 13, color: "#666" },
   divisorVertical: {
     fontSize: 13,
     color: "#bbb",
     marginHorizontal: 8,
     fontWeight: "bold",
   },
-  cnpjTexto: {
-    fontSize: 13,
-    color: "#666",
-    marginBottom: 5,
-  },
+  cnpjTexto: { fontSize: 13, color: "#666", marginBottom: 5 },
   labelBotao: { fontSize: 16, fontWeight: "bold", letterSpacing: 1 },
   bold: { fontWeight: "bold", color: "#333" },
   innerPadding: { paddingHorizontal: 15, paddingVertical: 10 },

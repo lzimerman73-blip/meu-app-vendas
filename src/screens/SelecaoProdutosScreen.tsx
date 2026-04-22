@@ -473,7 +473,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
                 <List.Accordion
                   title={item.desc}
                   titleStyle={styles.descTitle}
-                  titleNumberOfLines={2}
+                  titleNumberOfLines={3}
                   description={
                     <Text style={{ fontSize: 12, color: "#666" }}>
                       {`Cód: ${item.codpro}  |  `}
@@ -670,7 +670,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   cardAdicionado: { borderLeftWidth: 6, borderLeftColor: "#2e7d32" },
-  descTitle: { fontSize: 15, fontWeight: "bold", color: "#333" },
+  descTitle: { fontSize: 14, fontWeight: "bold", color: "#333" },
   expandido: {
     backgroundColor: "#f9f9f9",
     marginLeft: -40,
