@@ -7,7 +7,6 @@ import {
   Searchbar,
   Badge,
   Divider,
-  List,
 } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import api from "../api/api";
@@ -29,13 +28,14 @@ interface PedidoPendente {
 type Props = NativeStackScreenProps<RootStackParamList, "PedidosPendentes">;
 
 const PedidosPendentesScreen: React.FC<Props> = ({ route }) => {
-  const { vendedorId } = route.params;
+  const { vendedorId } = route.params; // ✅ RECEBE vendedorId
   const [loading, setLoading] = useState(true);
   const [pedidos, setPedidos] = useState<PedidoPendente[]>([]);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     const carregarPedidos = async () => {
+      // ✅ VALIDAÇÃO: Verifica se vendedorId existe
       if (!vendedorId) {
         console.log("Aguardando parâmetro vendedorId...");
         setLoading(false);
@@ -44,14 +44,20 @@ const PedidosPendentesScreen: React.FC<Props> = ({ route }) => {
 
       try {
         setLoading(true);
+
+        // ✅ PASSA vendedorId NA QUERY STRING
         const url = `/api/getpedidosPendentes?vendedorId=${vendedorId}`;
+
         const response = await api.get(url);
         const resData = response.data;
 
-        // ✅ AJUSTE: Removemos o warn e usamos o fallback para array vazio
-        const listaPendencias = resData?.pedidosPendentes || [];
-        setPedidos(listaPendencias);
-
+        // Busca pela chave 'pedidosPendentes'
+        if (resData && resData.pedidosPendentes) {
+          setPedidos(resData.pedidosPendentes);
+        } else {
+          console.warn("API retornou sem 'pedidosPendentes' para:", url);
+          setPedidos([]);
+        }
       } catch (error) {
         console.error("Erro ao buscar pedidos pendentes:", error);
         Alert.alert("Erro", "Não foi possível carregar as pendências.");
@@ -61,8 +67,9 @@ const PedidosPendentesScreen: React.FC<Props> = ({ route }) => {
     };
 
     carregarPedidos();
-  }, [vendedorId]);
+  }, [vendedorId]); // ✅ DEPENDENCY: vendedorId
 
+  // Filtro de busca local
   const filtered = pedidos.filter(
     (p) =>
       p.pedido.includes(search) ||
@@ -146,15 +153,11 @@ const PedidosPendentesScreen: React.FC<Props> = ({ route }) => {
           data={filtered}
           keyExtractor={(item, index) => item.pedido + item.item + index}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingBottom: 20, flexGrow: 1 }}
-          // ✅ AJUSTE: Visual padronizado com os 2 ticks
+          contentContainerStyle={{ paddingBottom: 20 }}
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <List.Icon icon="check-all" color="#4caf50" />
-              <Text style={styles.emptyText}>
-                Nenhum Pedido pendente de envio
-              </Text>
-            </View>
+            <Text style={styles.empty}>
+              Nenhum pedido pendente para este vendedor.
+            </Text>
           }
         />
       )}
@@ -181,19 +184,7 @@ const styles = StyleSheet.create({
   badgeSaldo: { backgroundColor: "#FF9800", fontWeight: "bold" },
   valorText: { color: "#D32F2F", fontWeight: "bold" },
   divider: { marginVertical: 8 },
-  // ✅ NOVOS ESTILOS PARA PADRONIZAÇÃO
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 100,
-  },
-  emptyText: {
-    textAlign: "center",
-    color: "#666",
-    fontSize: 16,
-    marginTop: 10,
-  },
+  empty: { textAlign: "center", marginTop: 50, color: "#999" },
 });
 
 export default PedidosPendentesScreen;

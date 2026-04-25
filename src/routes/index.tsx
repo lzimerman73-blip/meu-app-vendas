@@ -11,6 +11,7 @@ import RevisaoPedidoScreen from "../screens/RevisaoPedidoScreen";
 import PedidosOfflineScreen from "../screens/PedidosOfflineScreen";
 import PedidosPendentes from "../screens/PedidosPendentes";
 import { RootStackParamList } from "../types/navigation";
+import CadastroClienteScreen from '../screens/CadastroClienteScreen';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -101,6 +102,13 @@ export const Routes = () => {
           component={PedidosPendentes}
           options={{ title: "Pedidos Pendentes", headerShown: true }}
         />
+
+        <Stack.Screen
+          name="CadastroCliente"
+          component={CadastroClienteScreen}
+          options={{ title: 'Cadastrar Novo Cliente' }}
+        />
+
       </Stack.Navigator>
     </NavigationContainer>
   );

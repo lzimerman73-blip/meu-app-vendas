@@ -1,11 +1,19 @@
 import React, { useEffect, useState } from "react";
-import { View, FlatList, StyleSheet, ActivityIndicator } from "react-native";
+import {
+  View,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+} from "react-native";
 import { List, Searchbar, Text, Surface, Divider } from "react-native-paper";
 import api from "../api/api";
 
 const SelecaoTabelaScreen = ({ route, navigation }: any) => {
+  console.log("DEBUG 1 - Chegou na Seleção Tabela:", route.params?.atendimento);
+
   // Recebemos o cliente e loja para passar adiante no fluxo do pedido
-  const { cliente, loja, vendedorId } = route.params;
+  const { cliente, loja, vendedorId, vendedorNome, saldoFlex } = route.params;
 
   const [loading, setLoading] = useState(true);
   const [tabelas, setTabelas] = useState([]);
@@ -14,16 +22,29 @@ const SelecaoTabelaScreen = ({ route, navigation }: any) => {
   useEffect(() => {
     const carregarTabelas = async () => {
       try {
-        const response = await api.get("/api/gettabelas");
+        // AJUSTE: Enviando o vendedorId como parâmetro para a API
+        const response = await api.get("/api/gettabelavendedor", {
+          params: {
+            vendedor: vendedorId,
+          },
+        });
+
         setTabelas(response.data.tabelas);
       } catch (error) {
         console.error("Erro ao carregar tabelas:", error);
+        Alert.alert(
+          "Erro",
+          "Não foi possível carregar as tabelas do vendedor.",
+        );
       } finally {
         setLoading(false);
       }
     };
-    carregarTabelas();
-  }, []);
+
+    if (vendedorId) {
+      carregarTabelas();
+    }
+  }, [vendedorId]);
 
   const tabelasFiltradas = tabelas.filter(
     (t: any) =>
@@ -31,13 +52,12 @@ const SelecaoTabelaScreen = ({ route, navigation }: any) => {
       t.id.includes(searchQuery),
   );
 
-  const selecionarTabela = (idTabela: string) => {
-    // Navega para a próxima etapa (Seleção de Produtos)
+  // 1. Alteramos para receber o objeto 'item' completo da lista
+  const selecionarTabela = (item: any) => {
     navigation.navigate("SelecaoProdutos", {
-      cliente,
-      loja,
-      tabela: idTabela,
-      vendedorId,
+      ...route.params, // <--- ISSO AQUI copia cliente, loja, vendedorId, vendedorNome e saldoFlex AUTOMATICAMENTE
+      tabela: item.id, // Aqui você define o ID da tabela
+      tabelaDesc: item.descricao, // Aqui você envia a descrição para o PDF
     });
   };
 
@@ -76,7 +96,7 @@ const SelecaoTabelaScreen = ({ route, navigation }: any) => {
               <List.Icon {...props} icon="file-table-outline" color="#005492" />
             )}
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
-            onPress={() => selecionarTabela(item.id)}
+            onPress={() => selecionarTabela(item)}
             titleStyle={styles.tituloTabela}
           />
         )}

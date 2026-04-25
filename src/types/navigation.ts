@@ -14,4 +14,5 @@ export type RootStackParamList = {
     produtosOriginais: any[];
   };
   PedidosPendentes: { vendedorId: string };
+  CadastroCliente: undefined;
 };

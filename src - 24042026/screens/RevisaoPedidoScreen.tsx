@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   StatusBar,
-  ViewStyle,
+  TextInput,
 } from "react-native";
 import {
   Text,
@@ -21,7 +21,10 @@ import {
   Modal,
   Searchbar,
 } from "react-native-paper";
+import { CommonActions } from "@react-navigation/native";
 import api from "../api/api";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 
 // --- INTERFACES ---
 interface ItemCarrinho {
@@ -30,6 +33,7 @@ interface ItemCarrinho {
   precoVenda: string | number;
   percDesconto: string;
   valorDesconto: string;
+  valorFlex?: string;
 }
 
 interface Produto {
@@ -44,6 +48,7 @@ interface CondicaoPagto {
 }
 
 const RevisaoPedidoScreen = ({ route, navigation }: any) => {
+  console.log("DEBUG 3 - Chegou na Revisão:", route.params?.atendimento);
   const {
     carrinho,
     cliente,
@@ -53,10 +58,13 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
     pedidoIdEdicao,
     produtosOriginais,
     dadosPedidoSalvo,
+    saldoFlex,
+    atendimento,
   } = route.params;
 
-  // --- RECONSTRUÇÃO DO ID DO VENDEDOR (REDE DE SEGURANÇA) ---
-  // Se o vendedorId vier undefined, tentamos pegar do objeto cliente ou do pedido salvo
+  // LOG 1: Verificar se a tela recebeu o atendimento do produto/tabela
+  console.log("DEBUG - Atendimento recebido na Revisão:", atendimento);
+
   const idVendedorEfetivo =
     vendedorId || cliente?.vendedor || dadosPedidoSalvo?.vendedor;
 
@@ -69,11 +77,19 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
     dadosPedidoSalvo?.formaPagto || "",
   );
 
+  // ✅ NOVOS ESTADOS PARA OBSERVAÇÃO NF
+  const [modalObservacaoVisivel, setModalObservacaoVisivel] =
+    useState<boolean>(false);
+  const [modalDigitacaoVisivel, setModalDigitacaoVisivel] =
+    useState<boolean>(false);
+  const [observacaoNF, setObservacaoNF] = useState<string>(
+    dadosPedidoSalvo?.observacaoNF || "",
+  );
+
   const [modalFormaVisivel, setModalFormaVisivel] = useState<boolean>(false);
   const [modalVisivel, setModalVisivel] = useState<boolean>(false);
   const [busca, setBusca] = useState<string>("");
 
-  // --- CÁLCULOS ---
   const formatarMoeda = (valor: number) => {
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
@@ -100,14 +116,10 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
       c.id.includes(busca),
   );
 
-  // --- CARREGAMENTO DA API ---
   useEffect(() => {
     const carregarCondicoes = async () => {
-      console.log("DEBUG REVISÃO - ID Vendedor:", idVendedorEfetivo);
-
       if (!idVendedorEfetivo) {
         setLoading(false);
-        // Não damos Alert aqui para não travar a tela se for apenas um erro de log
         return;
       }
 
@@ -129,7 +141,29 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
     carregarCondicoes();
   }, [idVendedorEfetivo]);
 
-  // --- FINALIZAÇÃO ---
+  // ✅ FUNÇÃO PARA PERGUNTAR SOBRE OBSERVAÇÃO NF
+  const perguntarObservacaoNF = () => {
+    setModalObservacaoVisivel(true);
+  };
+
+  // ✅ FUNÇÃO PARA ABRIR CAMPO DE DIGITAÇÃO
+  const abrirCampoObservacao = () => {
+    setModalObservacaoVisivel(false);
+    setModalDigitacaoVisivel(true);
+  };
+
+  // ✅ FUNÇÃO PARA SALVAR OBSERVAÇÃO E FINALIZAR
+  const salvarObservacaoEFinalizar = () => {
+    setModalDigitacaoVisivel(false);
+    finalizarPedido();
+  };
+
+  // ✅ FUNÇÃO PARA PULAR OBSERVAÇÃO E FINALIZAR
+  const pularObservacaoEFinalizar = () => {
+    setModalObservacaoVisivel(false);
+    finalizarPedido();
+  };
+
   const finalizarPedido = async () => {
     if (!condicaoSel || !formaPagto) {
       return Alert.alert(
@@ -138,37 +172,94 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
       );
     }
 
+    const tratarValor = (valor: any) => {
+      if (typeof valor === "number") return valor;
+      const str = String(valor || "0");
+      const limpo = str.replace(/\./g, "").replace(",", ".");
+      return parseFloat(limpo) || 0;
+    };
+
     Alert.alert("Salvar Pedido", `Total: ${formatarMoeda(valorTotal)}`, [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Confirmar",
         onPress: async () => {
           try {
+            // --- 1. CAPTURA A HORA DE AGORA (FIM DO ATENDIMENTO) ---
+            const agoraFim = new Date();
+            const dataFim = agoraFim
+              .toISOString()
+              .split("T")[0]
+              .replace(/-/g, "");
+            const horaFim = agoraFim.toLocaleTimeString("pt-BR", {
+              hour12: false,
+            });
+
+            // Buscamos a descrição da condição selecionada para o PDF
+            const descCondicao =
+              condicoes?.find((c: any) => c.id === condicaoSel)?.descricao ||
+              condicaoSel;
+
             const novoPedido = {
               id: pedidoIdEdicao || Date.now().toString(),
               dataCriacao:
                 dadosPedidoSalvo?.dataCriacao || new Date().toISOString(),
-              vendedor: idVendedorEfetivo,
-              cliente: cliente, // Salvando o objeto COMPLETO (com Nome)
+              data: new Date().toLocaleDateString("pt-BR"),
+
+              // --- 2. ADICIONE OS CAMPOS PARA A ZF4 AQUI ---
+              dataini: atendimento?.dataInic || "", // Veio da tela DetalhesCliente
+              horaini: atendimento?.horaInic || "", // Veio da tela DetalhesCliente
+              datafim: dataFim, // Gerado agora no clique
+              horafim: horaFim, // Gerado agora no clique
+              tipoAten: atendimento?.tipo || "", // Veio da tela DetalhesCliente
+
+              // --- DADOS DO VENDEDOR ---
+              vendedor: vendedorId,
+              vendedorNome:
+                route.params.vendedorNome || "Vendedor não informado",
+
+              // --- DADOS DO CLIENTE (Objeto completo vindo da DetalhesCliente) ---
+              cliente: cliente, // Aqui já terá nome, cnpj, endereco, bairro, etc.
               loja,
+
+              // --- TABELA DE PREÇO ---
               tabela,
+              tabelaDesc: route.params.tabelaDesc || "Tabela não informada",
+
+              // --- CONDIÇÃO DE PAGAMENTO ---
               condicaoPagamento: condicaoSel,
+              condicaoDesc: descCondicao,
               formaPagto,
-              valorTotal,
-              itens: itensRevisao.map((item: Produto) => {
+              valorTotal: tratarValor(valorTotal),
+              saldoFlex: saldoFlex,
+              carrinho: carrinho, // Mantemos para conferência de quantidades no PDF
+
+              // ✅ ADICIONE A OBSERVAÇÃO NF AQUI
+              observacaoNF: observacaoNF || "", // Campo para sincronizar com Protheus
+
+              itens: itensRevisao.map((item: any) => {
                 const d = carrinho[item.codpro];
                 return {
                   codpro: item.codpro,
                   desc: item.desc,
-                  qtd: d.qtd,
-                  precoVenda:
-                    typeof d.precoVenda === "string"
-                      ? parseFloat(d.precoVenda.replace(",", "."))
-                      : d.precoVenda,
+                  qtd: Number(d.qtd),
+                  precoVenda: Number(tratarValor(d.precoVenda).toFixed(2)),
+                  precoTabela: Number(tratarValor(d.precoTabela).toFixed(2)),
+                  valorFlex: Number(
+                    tratarValor(d.valorFlex || d.valorDesconto).toFixed(2),
+                  ),
+                  percDesconto: d.percDesconto,
+                  valorDesconto: d.valorDesconto,
                 };
               }),
               status: "pendente",
             };
+
+            // LOG 2: Verificar o objeto que será salvo no celular
+            console.log(
+              "DEBUG - Objeto Novo Pedido pronto para salvar:",
+              novoPedido,
+            );
 
             const salvos = await AsyncStorage.getItem("@pedidos_offline");
             let lista = salvos ? JSON.parse(salvos) : [];
@@ -187,7 +278,22 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
             );
 
             Alert.alert("Sucesso", "Pedido salvo offline!", [
-              { text: "OK", onPress: () => navigation.navigate("Clientes") },
+              {
+                text: "OK",
+                onPress: () => {
+                  navigation.dispatch(
+                    CommonActions.reset({
+                      index: 0,
+                      routes: [
+                        {
+                          name: "Clientes",
+                          params: { vendedorId: vendedorId },
+                        },
+                      ],
+                    }),
+                  );
+                },
+              },
             ]);
           } catch (e) {
             Alert.alert("Erro", "Não foi possível gravar o pedido.");
@@ -269,11 +375,21 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
                   )}
                 />
               </Surface>
+
+              {/* ✅ EXIBIR OBSERVAÇÃO NF SE HOUVER */}
+              {observacaoNF && (
+                <View style={styles.observacaoBox}>
+                  <Text style={styles.label}>Observação para NF</Text>
+                  <Surface style={styles.observacaoDisplay}>
+                    <Text style={styles.observacaoText}>{observacaoNF}</Text>
+                  </Surface>
+                </View>
+              )}
             </View>
 
             <Button
               mode="contained"
-              onPress={finalizarPedido}
+              onPress={perguntarObservacaoNF}
               style={styles.btnFinalizar}
             >
               GRAVAR PEDIDO
@@ -283,6 +399,76 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
       </ScrollView>
 
       <Portal>
+        {/* ✅ MODAL PERGUNTANDO SOBRE OBSERVAÇÃO NF */}
+        <Modal
+          visible={modalObservacaoVisivel}
+          onDismiss={() => setModalObservacaoVisivel(false)}
+          contentContainerStyle={styles.modalObservacaoStyle}
+        >
+          <Title style={{ textAlign: "center", marginBottom: 20 }}>
+            Observação para Nota Fiscal
+          </Title>
+          <Text style={{ textAlign: "center", marginBottom: 20, fontSize: 16 }}>
+            Deseja incluir uma observação para a Nota Fiscal?
+          </Text>
+          <View style={styles.modalButtonsContainer}>
+            <Button
+              mode="outlined"
+              onPress={pularObservacaoEFinalizar}
+              style={styles.modalButton}
+            >
+              Não
+            </Button>
+            <Button
+              mode="contained"
+              onPress={abrirCampoObservacao}
+              style={styles.modalButton}
+              buttonColor="#005492"
+            >
+              Sim
+            </Button>
+          </View>
+        </Modal>
+
+        {/* ✅ MODAL PARA DIGITAÇÃO DA OBSERVAÇÃO */}
+        <Modal
+          visible={modalDigitacaoVisivel}
+          onDismiss={() => setModalDigitacaoVisivel(false)}
+          contentContainerStyle={styles.modalDigitacaoStyle}
+        >
+          <Title style={{ textAlign: "center", marginBottom: 20 }}>
+            Digite a Observação
+          </Title>
+          <TextInput
+            style={styles.textInputObservacao}
+            placeholder="Digite a observação para a Nota Fiscal..."
+            placeholderTextColor="#999"
+            multiline
+            numberOfLines={5}
+            value={observacaoNF}
+            onChangeText={setObservacaoNF}
+            textAlignVertical="top"
+          />
+          <View style={styles.modalButtonsContainer}>
+            <Button
+              mode="outlined"
+              onPress={() => setModalDigitacaoVisivel(false)}
+              style={styles.modalButton}
+            >
+              Cancelar
+            </Button>
+            <Button
+              mode="contained"
+              onPress={salvarObservacaoEFinalizar}
+              style={styles.modalButton}
+              buttonColor="#2E7D32"
+            >
+              Salvar
+            </Button>
+          </View>
+        </Modal>
+
+        {/* MODAL CONDIÇÕES DE PAGAMENTO */}
         <Modal
           visible={modalVisivel}
           onDismiss={() => setModalVisivel(false)}
@@ -311,6 +497,7 @@ const RevisaoPedidoScreen = ({ route, navigation }: any) => {
           </ScrollView>
         </Modal>
 
+        {/* MODAL FORMA DE PAGAMENTO */}
         <Modal
           visible={modalFormaVisivel}
           onDismiss={() => setModalFormaVisivel(false)}
@@ -370,6 +557,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DDD",
   },
+  observacaoBox: { marginTop: 20 },
+  observacaoDisplay: {
+    borderRadius: 8,
+    backgroundColor: "#F0F8FF",
+    borderWidth: 1,
+    borderColor: "#005492",
+    padding: 12,
+  },
+  observacaoText: {
+    fontSize: 14,
+    color: "#333",
+    lineHeight: 20,
+  },
   btnFinalizar: { margin: 15, backgroundColor: "#2E7D32", paddingVertical: 5 },
   modalStyle: {
     backgroundColor: "white",
@@ -382,6 +582,39 @@ const styles = StyleSheet.create({
     padding: 20,
     margin: 40,
     borderRadius: 10,
+  },
+  // ✅ NOVOS ESTILOS PARA MODAIS DE OBSERVAÇÃO
+  modalObservacaoStyle: {
+    backgroundColor: "white",
+    padding: 25,
+    margin: 30,
+    borderRadius: 12,
+    elevation: 5,
+  },
+  modalDigitacaoStyle: {
+    backgroundColor: "white",
+    padding: 25,
+    margin: 20,
+    borderRadius: 12,
+    elevation: 5,
+  },
+  textInputObservacao: {
+    borderWidth: 1,
+    borderColor: "#DDD",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+    fontSize: 14,
+    color: "#333",
+    backgroundColor: "#F8F9FA",
+  },
+  modalButtonsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  modalButton: {
+    flex: 1,
   },
 });
 

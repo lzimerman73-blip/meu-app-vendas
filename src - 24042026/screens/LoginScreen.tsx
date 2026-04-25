@@ -7,10 +7,8 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
-import { TextInput, Button, Title, Avatar, useTheme } from "react-native-paper";
-import * as Notifications from "expo-notifications";
-import * as Device from "expo-device";
-import AsyncStorage from "@react-native-async-storage/async-storage"; // 1. Adicione este import
+import { TextInput, Button, Title, Avatar } from "react-native-paper";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from "../api/api";
 
 interface LoginScreenProps {
@@ -21,50 +19,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const theme = useTheme();
 
+  // Função simplificada para desenvolvimento
   const getPushToken = async () => {
-    if (!Device.isDevice) return "TOKEN_SIMULADOR";
-    try {
-      const { status: existingStatus } =
-        await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      if (existingStatus !== "granted") {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-      if (finalStatus !== "granted") return null;
-      const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: "SEU_PROJECT_ID_AQUI",
-      });
-      return tokenData.data;
-    } catch (err) {
-      console.error("❌ Erro ao gerar token:", err);
-      return null;
-    }
-  };
-
-  const salvarTokenNoProtheus = async (
-    pushToken: string,
-    userId: string,
-    accessToken: string,
-  ) => {
-    try {
-      await api.post(
-        "/api/wstoken",
-        {
-          userid: userId,
-          token: pushToken,
-          plataforma: Platform.OS,
-        },
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        },
-      );
-    } catch (error: any) {
-      console.log("❌ Erro no registro de token");
-      throw error;
-    }
+    return "TOKEN_DEV_SIMULADO";
   };
 
   const handleLogin = async () => {
@@ -74,15 +32,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     }
 
     setLoading(true);
+    console.log("--- Iniciando Login ---");
+
     try {
-      // 1. Mudança na montagem do Body para garantir compatibilidade Cloud
       const params = new URLSearchParams();
       params.append("grant_type", "password");
       params.append("username", username);
       params.append("password", password);
 
-      // 2. IMPORTANTE: Removida a barra '/' antes de 'api'
-      // Isso garante que ele use o '.../rest' definido na baseURL
       const response = await api.post(
         "api/oauth2/v1/token",
         params.toString(),
@@ -95,12 +52,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
       );
 
       if (response.data.access_token) {
-        // SALVAR NO STORAGE
+        console.log("✅ Autenticado com sucesso.");
+
+        // Salva dados essenciais
         await AsyncStorage.setItem(
           "protheus_access_token",
           response.data.access_token,
         );
-
         await AsyncStorage.setItem("@vendedor_id", username);
 
         if (response.data.refresh_token) {
@@ -110,30 +68,22 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
           );
         }
 
-        // 3. Pegar Push Token (com tratamento de erro interno)
-        const pushToken = await getPushToken();
-        const tokenFinal = pushToken || "TOKEN_TESTE_" + Platform.OS;
-
-        // 4. Salvar token (Removida a barra inicial aqui também)
+        /* FUNÇÃO DE TOKEN DESATIVADA EM DESENVOLVIMENTO
+          Quando for voltar com as notificações, basta reativar o bloco abaixo 
+          e configurar o getPushToken real.
+        */
+        /*
         try {
-          await api.post(
-            "api/wstoken",
-            {
-              userid: username,
-              token: tokenFinal,
-              plataforma: Platform.OS,
-            },
-            {
-              headers: {
-                Authorization: `Bearer ${response.data.access_token}`,
-              },
-            },
-          );
-        } catch (tokenErr) {
-          console.log(
-            "⚠️ Token não registrado no Protheus, mas login prossegue.",
-          );
-        }
+           const pushToken = await getPushToken();
+           await api.post("api/wstoken", { 
+             userid: username, 
+             token: pushToken, 
+             plataforma: Platform.OS 
+           }, {
+             headers: { Authorization: `Bearer ${response.data.access_token}` }
+           });
+        } catch (e) { console.log("Erro silencioso no wstoken"); }
+        */
 
         onLoginSuccess(
           response.data.access_token,
@@ -142,7 +92,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         );
       }
     } catch (e: any) {
-      console.error("🚨 Erro detalhado no Login:", e);
+      console.error("🚨 Erro no Login:", e.response?.data || e.message);
+
       const statusCode = e.response?.status;
       let mensagemExibicao = "Erro ao conectar com o servidor.";
 
@@ -150,14 +101,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
       else if (statusCode === 403)
         mensagemExibicao = "Acesso negado pelo Protheus.";
       else if (statusCode === 404)
-        mensagemExibicao =
-          "Endpoint de Login não encontrado (404). Verifique a URL.";
+        mensagemExibicao = "Servidor não encontrado (404).";
       else if (statusCode === 500)
         mensagemExibicao = "Erro interno no servidor Protheus.";
 
       Alert.alert("Erro de Acesso", mensagemExibicao);
     } finally {
       setLoading(false);
+      console.log("--- Fim do processo de Login ---");
     }
   };
 
@@ -171,7 +122,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.appContainer}>
-          {/* Ícone Neutro no lugar da Logo */}
           <Avatar.Icon
             size={100}
             icon="briefcase-check"

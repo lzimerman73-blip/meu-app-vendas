@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, FlatList, StyleSheet, ScrollView } from "react-native";
+import { View, FlatList, StyleSheet } from "react-native";
 import {
   List,
   Searchbar,
@@ -83,18 +83,39 @@ const ClientesScreen: React.FC<ClientesScreenProps> = ({ vendedorId }) => {
 
   return (
     <View style={styles.container}>
-      {/* HEADER COM TÍTULO */}
-      <View style={styles.headerContainer}>
-        <Text style={styles.tituloTela}>Meus Clientes</Text>
+      {/* BOTÕES SUPERIORES */}
+      <View style={styles.topButtonsContainer}>
+        <Button
+          mode="contained"
+          icon="account-plus"
+          buttonColor="#005492"
+          textColor="#fff"
+          onPress={() => navigation.navigate("CadastroCliente")}
+          style={styles.button}
+          labelStyle={styles.buttonLabel}
+        >
+          Novo Cliente
+        </Button>
+        <Button
+          mode="contained"
+          icon="swap-horizontal"
+          buttonColor="#005492"
+          textColor="#fff"
+          onPress={() => navigation.navigate("SelecaoEmpresa", { vendedorId })}
+          style={styles.button}
+          labelStyle={styles.buttonLabel}
+        >
+          Trocar Filial
+        </Button>
       </View>
 
-      {/* BOTÕES EM GRID 2x1 */}
+      {/* BOTÕES DE PEDIDOS - AGORA PADRONIZADOS EM AZUL */}
       <View style={styles.buttonsContainer}>
         <Button
-          mode="contained-tonal"
+          mode="contained"
           icon="clipboard-list-outline"
-          buttonColor="#e3f2fd"
-          textColor="#005492"
+          buttonColor="#005492"
+          textColor="#fff"
           onPress={() => navigation.navigate("PedidosOffline", { vendedorId })}
           style={styles.button}
           labelStyle={styles.buttonLabel}
@@ -104,7 +125,7 @@ const ClientesScreen: React.FC<ClientesScreenProps> = ({ vendedorId }) => {
         <Button
           mode="contained"
           icon="clock-alert-outline"
-          buttonColor="#FF9800"
+          buttonColor="#005492"
           textColor="#fff"
           onPress={() =>
             navigation.navigate("PedidosPendentes", { vendedorId })
@@ -151,35 +172,34 @@ const ClientesScreen: React.FC<ClientesScreenProps> = ({ vendedorId }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5" },
 
-  // HEADER
-  headerContainer: {
-    paddingHorizontal: 15,
-    paddingTop: 15,
-    paddingBottom: 10,
+  // CONTAINERS DE BOTÕES
+  topButtonsContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 10,
+    paddingTop: 15, // Espaçamento superior igual ao que o título tinha
+    paddingBottom: 0,
+    gap: 10,
     backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
   },
-  tituloTela: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#005492",
-  },
-
-  // BOTÕES EM GRID
   buttonsContainer: {
     flexDirection: "row",
     paddingHorizontal: 10,
     paddingVertical: 12,
     gap: 10,
     backgroundColor: "#fff",
+    borderBottomWidth: 1, // Movido o borderBottom do antigo título para cá
+    borderBottomColor: "#e0e0e0",
   },
   button: {
     flex: 1,
     borderRadius: 8,
   },
+  outlineButton: {
+    borderColor: "#005492",
+    borderWidth: 1,
+  },
   buttonLabel: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "600",
   },
 
@@ -191,7 +211,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
 
-  // LISTA
+  // LISTA E CARDS
   listContent: { paddingBottom: 20 },
   card: {
     marginHorizontal: 10,

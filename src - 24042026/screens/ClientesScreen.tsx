@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, FlatList, StyleSheet } from "react-native";
+import { View, FlatList, StyleSheet, ScrollView } from "react-native";
 import {
   List,
   Searchbar,
@@ -83,20 +83,40 @@ const ClientesScreen: React.FC<ClientesScreenProps> = ({ vendedorId }) => {
 
   return (
     <View style={styles.container}>
-      {/* NOVO TOPO COM O BOTÃO DE PEDIDOS */}
-      <View style={styles.topContainer}>
+      {/* HEADER COM TÍTULO */}
+      <View style={styles.headerContainer}>
         <Text style={styles.tituloTela}>Meus Clientes</Text>
+      </View>
+
+      {/* BOTÕES EM GRID 2x1 */}
+      <View style={styles.buttonsContainer}>
         <Button
           mode="contained-tonal"
           icon="clipboard-list-outline"
           buttonColor="#e3f2fd"
           textColor="#005492"
           onPress={() => navigation.navigate("PedidosOffline", { vendedorId })}
+          style={styles.button}
+          labelStyle={styles.buttonLabel}
         >
           Pedidos Salvos
         </Button>
+        <Button
+          mode="contained"
+          icon="clock-alert-outline"
+          buttonColor="#FF9800"
+          textColor="#fff"
+          onPress={() =>
+            navigation.navigate("PedidosPendentes", { vendedorId })
+          }
+          style={styles.button}
+          labelStyle={styles.buttonLabel}
+        >
+          Pedidos Pendentes
+        </Button>
       </View>
 
+      {/* SEARCHBAR */}
       <Searchbar
         placeholder="Buscar cliente ou código..."
         onChangeText={setSearchQuery}
@@ -104,6 +124,7 @@ const ClientesScreen: React.FC<ClientesScreenProps> = ({ vendedorId }) => {
         style={styles.searchBar}
       />
 
+      {/* LISTA DE CLIENTES */}
       {loading ? (
         <ActivityIndicator
           animating={true}
@@ -129,26 +150,55 @@ const ClientesScreen: React.FC<ClientesScreenProps> = ({ vendedorId }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5" },
-  topContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+
+  // HEADER
+  headerContainer: {
     paddingHorizontal: 15,
     paddingTop: 15,
-    paddingBottom: 5,
+    paddingBottom: 10,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
   },
   tituloTela: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "bold",
     color: "#005492",
   },
-  searchBar: { margin: 10, elevation: 2, backgroundColor: "#fff" },
+
+  // BOTÕES EM GRID
+  buttonsContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    gap: 10,
+    backgroundColor: "#fff",
+  },
+  button: {
+    flex: 1,
+    borderRadius: 8,
+  },
+  buttonLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  // SEARCHBAR
+  searchBar: {
+    margin: 10,
+    elevation: 2,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+  },
+
+  // LISTA
   listContent: { paddingBottom: 20 },
   card: {
     marginHorizontal: 10,
     marginBottom: 10,
     backgroundColor: "#fff",
     elevation: 3,
+    borderRadius: 8,
   },
   headerRow: {
     flexDirection: "row",
@@ -164,19 +214,19 @@ const styles = StyleSheet.create({
   codeBadge: {
     backgroundColor: "#e1e8ed",
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     borderRadius: 4,
   },
-  codeText: { color: "#444", fontWeight: "bold" },
-  secondaryText: { color: "#757575", marginTop: 2 },
+  codeText: { color: "#444", fontWeight: "bold", fontSize: 11 },
+  secondaryText: { color: "#757575", marginTop: 4 },
   divider: { marginVertical: 8 },
   infoRow: {
     flexDirection: "row",
     alignItems: "center",
-    height: 30,
+    height: 28,
     marginLeft: -8,
   },
-  infoText: { marginLeft: 8, color: "#444" },
+  infoText: { marginLeft: 8, color: "#444", fontSize: 12 },
   emptyText: { textAlign: "center", marginTop: 50, color: "#999" },
 });
 

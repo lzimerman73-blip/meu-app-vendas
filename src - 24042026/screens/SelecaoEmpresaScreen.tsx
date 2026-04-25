@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
+import { useNavigation } from "@react-navigation/native";
 import {
   View,
   StyleSheet,
   FlatList,
   ActivityIndicator,
-  SafeAreaView,
   Alert,
 } from "react-native";
 import {
@@ -15,8 +15,10 @@ import {
   Text,
   Searchbar,
 } from "react-native-paper";
+import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import api from "../api/api";
+// IMPORTANTE: Importamos a nova função de busca dinâmica
+import api, { buscarEmpresasDinamico } from "../api/api";
 
 interface Empresa {
   codigo: string;
@@ -35,6 +37,7 @@ const SelecaoEmpresaScreen: React.FC<Props> = ({ onConfirm, route }) => {
   const [filteredEmpresas, setFilteredEmpresas] = useState<Empresa[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const navigation = useNavigation<any>();
 
   useEffect(() => {
     carregarEmpresas();
@@ -43,14 +46,20 @@ const SelecaoEmpresaScreen: React.FC<Props> = ({ onConfirm, route }) => {
   const carregarEmpresas = async () => {
     try {
       setLoading(true);
-      const vendedorId = route.params?.vendedorId;
-      const response = await api.get(`api/getempresas?vendedor=${vendedorId}`);
-      const data = response.data.items || [];
+      const vendedorId = route.params?.vendedorId || "admin"; // Fallback para admin se vazio
+
+      // --- MUDANÇA AQUI ---
+      // Em vez de api.get direto, usamos o "Chaveiro" que criamos no api.ts
+      const data = await buscarEmpresasDinamico(vendedorId);
+
       setEmpresas(data);
       setFilteredEmpresas(data);
     } catch (error: any) {
-      console.error("ERRO:", error);
-      Alert.alert("Erro", "Não foi possível carregar as empresas.");
+      console.error("ERRO NA BUSCA DINÂMICA:", error);
+      Alert.alert(
+        "Acesso Negado",
+        "Não foi possível localizar nenhuma filial liberada para seu usuário no Protheus.",
+      );
     } finally {
       setLoading(false);
     }
@@ -67,25 +76,25 @@ const SelecaoEmpresaScreen: React.FC<Props> = ({ onConfirm, route }) => {
   };
 
   const selecionarEmpresa = async (item: Empresa) => {
-    try {
-      await AsyncStorage.setItem("@empresa_ativa", item.codigo);
-      await AsyncStorage.setItem("@filial_ativa", item.filial);
-      await AsyncStorage.setItem("@nome_empresa_ativa", item.nome);
-      await AsyncStorage.setItem("@desc_filial_ativa", item.descFilial);
+    // 1. Extrai os códigos (Ex: "1202" -> "12" e "02")
+    const codEmpresa = item.filial.substring(0, 2);
+    const codFilial = item.filial.substring(2, 4);
+
+    // 2. Salva no storage para o interceptor da API usar daqui pra frente
+    await AsyncStorage.setItem("@empresa_ativa", codEmpresa);
+    await AsyncStorage.setItem("@filial_ativa", codFilial);
+
+    console.log(`📍 Empresa selecionada: ${codEmpresa} Filial: ${codFilial}`);
+
+    // 3. EM VEZ DE navigation.navigate("Home"), use a prop onConfirm()
+    // que você já definiu nas suas rotas. Ela vai te levar para "Clientes".
+    if (onConfirm) {
       onConfirm();
-    } catch (e) {
-      Alert.alert("Erro", "Falha ao salvar a seleção.");
+    } else {
+      // Caso o onConfirm falhe por algum motivo, forçamos a rota correta:
+      navigation.replace("Clientes", { vendedorId: route.params?.vendedorId });
     }
   };
-
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#005492" />
-        <Text style={{ marginTop: 10 }}>Carregando unidades...</Text>
-      </View>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -110,10 +119,8 @@ const SelecaoEmpresaScreen: React.FC<Props> = ({ onConfirm, route }) => {
         renderItem={({ item }) => (
           <Surface style={styles.card}>
             <List.Item
-              // Título: Filial em Negrito Azul
               title={`Filial ${item.filial}`}
               titleStyle={styles.cardTitleHighlight}
-              // Descrição: Nome da Empresa na linha de baixo
               description={item.descFilial}
               descriptionStyle={styles.cardDescription}
               style={{ paddingLeft: 12 }}
@@ -163,7 +170,6 @@ const styles = StyleSheet.create({
     elevation: 2,
     marginBottom: 4,
   },
-  // Estilo solicitado: Negrito e Azul para o título (Filial)
   cardTitleHighlight: {
     fontWeight: "bold",
     color: "#005492",

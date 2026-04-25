@@ -1,5 +1,11 @@
-import React, { useEffect, useState, useMemo } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage"; // <-- IMPORT ESSENCIAL
+import React, {
+  useEffect,
+  useState,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
   FlatList,
@@ -18,11 +24,23 @@ import {
   TextInput,
   Divider,
 } from "react-native-paper";
+import { useFocusEffect } from "@react-navigation/native";
 import api from "../api/api";
 
 const SelecaoProdutosScreen = ({ route, navigation }: any) => {
-  const { cliente, loja, tabela, vendedorId, pedidoIdEdicao, carrinhoInicial } =
-    route.params;
+  console.log(
+    "DEBUG 2 - Chegou na Seleção Produtos:",
+    route.params?.atendimento,
+  );
+  const {
+    cliente,
+    loja,
+    tabela,
+    vendedorId,
+    pedidoIdEdicao,
+    carrinhoInicial,
+    saldoFlex,
+  } = route.params;
 
   const [loading, setLoading] = useState(true);
   const [produtos, setProdutos] = useState<any[]>([]);
@@ -30,14 +48,23 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
   const [carrinho, setCarrinho] = useState<{ [key: string]: any }>(
     carrinhoInicial || {},
   );
-  const [pedidoFinalizado, setPedidoFinalizado] = useState(false);
 
-  // --- NOVO: Estado para segurar o ID do vendedor caso ele venha vazio ---
+  // --- MELHOR PRÁTICA: RESETAR STATUS DE FINALIZAÇÃO AO VOLTAR PARA A TELA ---
+  useFocusEffect(
+    useCallback(() => {
+      navigation.setParams({ finalizandoPedido: false });
+    }, [navigation]),
+  );
+
+  // --- CÁLCULO DE ITENS ---
+  const totalItens = Object.values(carrinho).reduce((a, b) => a + b.qtd, 0);
+
+  const totalItensRef = useRef(totalItens);
+  const finalizandoRef = useRef(false);
+
   const [vendedorRecuperado, setVendedorRecuperado] = useState<string | null>(
     vendedorId,
   );
-
-  // --- O SEGREDO PARA A ORDENAÇÃO ESTÁVEL ---
   const [idsIniciaisNoCarrinho] = useState<string[]>(
     carrinhoInicial ? Object.keys(carrinhoInicial) : [],
   );
@@ -49,7 +76,49 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
     }).format(valor || 0);
   };
 
-  // 1. USE-EFFECT PARA CARREGAR OS PRODUTOS (Isso faz a bolinha parar de girar)
+  // --- CÁLCULO DO SALDO FLEX ---
+  const gastoTotalCarrinho = Object.values(carrinho).reduce((acc, item) => {
+    const vDescUnitario =
+      parseFloat(String(item.valorDesconto).replace(",", ".")) || 0;
+    const quantidade = Number(item.qtd) || 0;
+    return acc + vDescUnitario * quantidade;
+  }, 0);
+
+  const saldoRestante = (saldoFlex || 0) - gastoTotalCarrinho;
+
+  // --- INTERCEPTAÇÃO PROFISSIONAL DE SAÍDA ---
+  useEffect(() => {
+    const interceptarSaida = navigation.addListener(
+      "beforeRemove",
+      (e: any) => {
+        // Se não houver itens OU se a rota estiver marcada como 'finalizandoPedido', permitimos a saída sem alerta
+        const estaFinalizando = route.params?.finalizandoPedido === true;
+
+        if (totalItens === 0 || estaFinalizando) {
+          return;
+        }
+
+        // Impede a navegação padrão
+        e.preventDefault();
+
+        Alert.alert(
+          "Abandonar Pedido?",
+          "Você possui itens no carrinho. Se sair agora, os dados serão perdidos.",
+          [
+            { text: "Continuar Comprando", style: "cancel", onPress: () => {} },
+            {
+              text: "Sair e Perder Dados",
+              style: "destructive",
+              onPress: () => navigation.dispatch(e.data.action),
+            },
+          ],
+        );
+      },
+    );
+
+    return interceptarSaida;
+  }, [navigation, totalItens, route.params?.finalizandoPedido]);
+
   useEffect(() => {
     const carregarProdutos = async () => {
       try {
@@ -64,15 +133,12 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
     carregarProdutos();
   }, [tabela]);
 
-  // 2. USE-EFFECT PARA RECUPERAR O VENDEDOR (Garante o envio para a Revisão)
   useEffect(() => {
     const buscarVendedorNoStorage = async () => {
       if (!vendedorRecuperado) {
         try {
           const vSalvo = await AsyncStorage.getItem("@vendedor_id");
-          if (vSalvo) {
-            setVendedorRecuperado(vSalvo);
-          }
+          if (vSalvo) setVendedorRecuperado(vSalvo);
         } catch (e) {
           console.error("Erro ao buscar AsyncStorage:", e);
         }
@@ -81,15 +147,70 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
     buscarVendedorNoStorage();
   }, [vendedorId]);
 
-  // 3. USE-EFFECT DE BLOQUEIO DE SAÍDA E SALVAMENTO
   useEffect(() => {
-    if (route.params?.pedidoSalvo === true) {
-      setPedidoFinalizado(true);
-      setCarrinho({});
-      navigation.setParams({ pedidoSalvo: undefined });
-    }
-  }, [route.params?.pedidoSalvo]);
+    totalItensRef.current = totalItens;
+  }, [totalItens]);
 
+  // Se o usuário voltar para esta tela (vinda da revisão), reativa a trava
+  useFocusEffect(
+    useCallback(() => {
+      finalizandoRef.current = false;
+    }, []),
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (e: any) => {
+      const { action } = e.data;
+
+      // REGRA 1: Se o carrinho estiver vazio, sai direto
+      // REGRA 2: Se marcamos como 'finalizandoRef', sai direto (venda salva)
+      // REGRA 3: Se a ação for 'NAVIGATE' (indo para Revisão), sai direto
+      if (
+        totalItensRef.current === 0 ||
+        finalizandoRef.current ||
+        action.type === "NAVIGATE"
+      ) {
+        return;
+      }
+
+      // Impede a saída padrão
+      e.preventDefault();
+
+      Alert.alert("Abandonar Pedido?", "Os itens do carrinho serão perdidos.", [
+        { text: "Continuar Comprando", style: "cancel" },
+        {
+          text: "Sair",
+          style: "destructive",
+          onPress: () => navigation.dispatch(action),
+        },
+      ]);
+    });
+
+    return unsubscribe;
+  }, [navigation]);
+
+  // ✅ FUNÇÃO 1: VALIDAR PREÇO DE VENDA AO SAIR DO CAMPO (onBlur)
+  const validarPrecoVendaOnBlur = (codpro: string, itemOriginal: any) => {
+    const prcTabela = Number(itemOriginal.preco) || 0;
+
+    setCarrinho((prev) => {
+      const item = prev[codpro];
+      if (!item) return prev;
+
+      // Converte o valor para número
+      const vNum = parseFloat(String(item.precoVenda).replace(",", ".")) || 0;
+
+      // Formata com 2 casas decimais
+      const vFormatado = vNum.toFixed(2).replace(".", ",");
+
+      return {
+        ...prev,
+        [codpro]: { ...item, precoVenda: vFormatado },
+      };
+    });
+  };
+
+  // ✅ FUNÇÃO 2: ATUALIZAR ITEM CARRINHO COM CÁLCULOS COMPLETOS
   const atualizarItemCarrinho = (
     codpro: string,
     campo: string,
@@ -97,6 +218,8 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
     itemOriginal: any,
   ) => {
     const prcTabela = Number(itemOriginal.preco) || 0;
+    const limiteDescontoItem = prcTabela * 0.15;
+
     setCarrinho((prev) => {
       const itemAtual = prev[codpro] || {
         qtd: 0,
@@ -109,40 +232,136 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
 
       let novoItem = { ...itemAtual };
 
+      // ===== TRATAMENTO DE QUANTIDADE =====
       if (campo === "qtd") {
-        novoItem.qtd = Math.max(0, itemAtual.qtd + (valor as number));
+        const incremento = valor as number;
+        const novaQtd = Math.max(0, itemAtual.qtd + incremento);
+
+        if (incremento > 0) {
+          const vDescUn =
+            parseFloat(String(itemAtual.valorDesconto).replace(",", ".")) || 0;
+          if (vDescUn > 0 && vDescUn > saldoRestante) {
+            Alert.alert(
+              "Saldo Insuficiente",
+              "Você não tem saldo flex para mais unidades com este desconto.",
+            );
+            return prev;
+          }
+        }
+
         const nCarrinho = { ...prev };
-        if (novoItem.qtd === 0) delete nCarrinho[codpro];
-        else nCarrinho[codpro] = novoItem;
+        if (novaQtd === 0) delete nCarrinho[codpro];
+        else {
+          novoItem.qtd = novaQtd;
+          nCarrinho[codpro] = novoItem;
+        }
         return nCarrinho;
       }
 
-      const vTexto = String(valor).replace(",", ".");
-      const vNum = parseFloat(vTexto) || 0;
+      // ===== LIMPEZA E CONVERSÃO DO VALOR =====
+      let textoLimpo = String(valor).replace(/[^0-9,]/g, "");
+      const partes = textoLimpo.split(",");
+      if (partes.length > 2)
+        textoLimpo = partes[0] + "," + partes.slice(partes.length - 1);
 
+      const vNum = parseFloat(textoLimpo.replace(",", ".")) || 0;
+      let vlrDescPretendido = 0;
+
+      // ===== TRATAMENTO DO PREÇO DE VENDA =====
       if (campo === "precoVenda") {
-        novoItem.precoVenda = String(valor);
-        const vDesc = Math.max(0, prcTabela - vNum);
-        novoItem.valorDesconto = vDesc.toFixed(2).replace(".", ",");
-        novoItem.percDesconto =
-          prcTabela > 0
-            ? ((vDesc / prcTabela) * 100).toFixed(2).replace(".", ",")
-            : "0,00";
-        novoItem.valorFlex = novoItem.valorDesconto;
+        // ✅ CORREÇÃO PRINCIPAL: Quando preço de venda é MAIOR que tabela
+        if (vNum > prcTabela) {
+          // Calcula o acréscimo (valor flex negativo para crédito no Protheus)
+          const acrescimo = vNum - prcTabela;
+          novoItem.precoVenda = textoLimpo;
+          novoItem.valorDesconto = "0,00";
+          novoItem.percDesconto = "0,00";
+          // ✅ Valor flex NEGATIVO para representar crédito no Protheus
+          novoItem.valorFlex = (acrescimo * -1).toFixed(2).replace(".", ",");
+          return { ...prev, [codpro]: novoItem };
+        }
+
+        // Quando preço de venda é MENOR ou IGUAL à tabela
+        vlrDescPretendido = Math.max(0, prcTabela - vNum);
       } else if (campo === "percDesconto") {
-        novoItem.percDesconto = String(valor);
-        const vDesc = (prcTabela * vNum) / 100;
-        novoItem.valorDesconto = vDesc.toFixed(2).replace(".", ",");
-        novoItem.precoVenda = (prcTabela - vDesc).toFixed(2).replace(".", ",");
-        novoItem.valorFlex = vDesc.toFixed(2).replace(".", ",");
+        vlrDescPretendido = (prcTabela * vNum) / 100;
       } else if (campo === "valorDesconto") {
-        novoItem.valorDesconto = String(valor);
-        novoItem.percDesconto =
+        vlrDescPretendido = vNum;
+      }
+
+      // ===== TRATAMENTO DE DESCONTO (% ou Valor) =====
+      if (campo !== "precoVenda") {
+        let valorFoiCorrigido = false;
+
+        // Verifica limite de desconto (15%)
+        if (vlrDescPretendido > limiteDescontoItem + 0.001) {
+          Alert.alert(
+            "Limite Ajustado",
+            "O desconto máximo de 15% foi aplicado.",
+          );
+          vlrDescPretendido = limiteDescontoItem;
+          valorFoiCorrigido = true;
+        }
+
+        // Calcula gasto em outros itens
+        const gastoOutrosItens = Object.keys(prev)
+          .filter((key) => key !== codpro)
+          .reduce(
+            (acc, key) =>
+              acc +
+              (parseFloat(String(prev[key].valorDesconto).replace(",", ".")) ||
+                0) *
+                prev[key].qtd,
+            0,
+          );
+
+        // Calcula gasto total com este item
+        const gastoTotalComEste =
+          gastoOutrosItens + vlrDescPretendido * (itemAtual.qtd || 1);
+
+        // Verifica saldo flex disponível
+        if (gastoTotalComEste > (saldoFlex || 0) + 0.001) {
+          if (!valorFoiCorrigido)
+            Alert.alert(
+              "Saldo Ajustado",
+              "Desconto reduzido ao limite do seu Flex.",
+            );
+          const saldoDisponivel = Math.max(
+            0,
+            (saldoFlex || 0) - gastoOutrosItens,
+          );
+          vlrDescPretendido = Math.min(
+            saldoDisponivel / (itemAtual.qtd || 1),
+            limiteDescontoItem,
+          );
+          valorFoiCorrigido = true;
+        }
+
+        // Calcula percentual, valor e preço final
+        const percFinal =
           prcTabela > 0
-            ? ((vNum / prcTabela) * 100).toFixed(2).replace(".", ",")
+            ? ((vlrDescPretendido / prcTabela) * 100)
+                .toFixed(2)
+                .replace(".", ",")
             : "0,00";
-        novoItem.precoVenda = (prcTabela - vNum).toFixed(2).replace(".", ",");
-        novoItem.valorFlex = vNum.toFixed(2).replace(".", ",");
+        const valorFinal = vlrDescPretendido.toFixed(2).replace(".", ",");
+        const precoFinal = (prcTabela - vlrDescPretendido)
+          .toFixed(2)
+          .replace(".", ",");
+
+        // Atualiza campos conforme o tipo de entrada
+        if (campo === "percDesconto") {
+          novoItem.percDesconto = valorFoiCorrigido ? percFinal : textoLimpo;
+          novoItem.valorDesconto = valorFinal;
+          novoItem.precoVenda = precoFinal;
+        } else if (campo === "valorDesconto") {
+          novoItem.valorDesconto = valorFoiCorrigido ? valorFinal : textoLimpo;
+          novoItem.percDesconto = percFinal;
+          novoItem.precoVenda = precoFinal;
+        }
+
+        // ✅ Valor flex sempre igual ao valor desconto (para descontos)
+        novoItem.valorFlex = novoItem.valorDesconto;
       }
 
       return { ...prev, [codpro]: novoItem };
@@ -156,7 +375,6 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
         p.desc.toLowerCase().includes(t) || p.codpro.toLowerCase().includes(t)
       );
     });
-
     return filtrados.sort((a, b) => {
       const aEstavaNoCarrinho = idsIniciaisNoCarrinho.includes(a.codpro);
       const bEstavaNoCarrinho = idsIniciaisNoCarrinho.includes(b.codpro);
@@ -166,8 +384,6 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
     });
   }, [produtos, searchQuery, idsIniciaisNoCarrinho]);
 
-  const totalItens = Object.values(carrinho).reduce((a, b) => a + b.qtd, 0);
-
   if (loading)
     return (
       <ActivityIndicator style={{ flex: 1 }} size="large" color="#005492" />
@@ -176,10 +392,39 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
   return (
     <View style={styles.container}>
       <Surface style={styles.headerInfo}>
+        {/* --- NOVO BLOCO: DADOS DO CLIENTE --- */}
+        <View
+          style={{
+            marginBottom: 10,
+            borderBottomWidth: 1,
+            borderBottomColor: "#eee",
+            paddingBottom: 8,
+          }}
+        ></View>
+
         <View style={styles.rowHeader}>
-          <Text style={styles.tabelaTexto}>
-            Tabela: <Text style={{ fontWeight: "bold" }}>{tabela}</Text>
-          </Text>
+          <View>
+            <Text style={styles.tabelaTexto}>
+              Tabela:{" "}
+              <Text style={{ fontWeight: "bold", color: "#333" }}>
+                {/* Aqui garantimos que se tabelaDesc existir, ele concatena */}
+                {route.params.tabelaDesc
+                  ? `${tabela} - ${route.params.tabelaDesc}`
+                  : tabela}
+              </Text>
+            </Text>
+            <Text style={styles.saldoFlexLabel}>
+              Saldo Flex:{" "}
+              <Text
+                style={[
+                  styles.saldoFlexValor,
+                  { color: saldoRestante >= 0 ? "#2e7d32" : "#d32f2f" },
+                ]}
+              >
+                {formatarMoeda(saldoRestante)}
+              </Text>
+            </Text>
+          </View>
           <Badge visible={totalItens > 0} size={25} style={styles.badge}>
             {totalItens}
           </Badge>
@@ -200,12 +445,10 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
           const precoBase = Number(item.preco) || 0;
           const dItem = carrinho[item.codpro] || { qtd: 0 };
           const isAdicionado = dItem.qtd > 0;
-
           const mostrarDivisor =
             index > 0 &&
             !idsIniciaisNoCarrinho.includes(item.codpro) &&
             idsIniciaisNoCarrinho.includes(produtosOrdenados[index - 1].codpro);
-
           const vUnitario =
             parseFloat(
               String(dItem.precoVenda || precoBase).replace(",", "."),
@@ -221,7 +464,6 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
                   <Divider style={styles.linhaDivisora} />
                 </View>
               )}
-
               <Surface
                 style={[
                   styles.cardProduto,
@@ -231,7 +473,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
                 <List.Accordion
                   title={item.desc}
                   titleStyle={styles.descTitle}
-                  titleNumberOfLines={2}
+                  titleNumberOfLines={3}
                   description={
                     <Text style={{ fontSize: 12, color: "#666" }}>
                       {`Cód: ${item.codpro}  |  `}
@@ -240,9 +482,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
                           fontWeight: "bold",
                           color: item.saldo > 0 ? "#005492" : "#d32f2f",
                         }}
-                      >
-                        {`Estoque: ${item.saldo}`}
-                      </Text>
+                      >{`Estoque: ${item.saldo}`}</Text>
                     </Text>
                   }
                   left={(p) => (
@@ -265,6 +505,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
                         disabled
                         style={styles.inputFull}
                       />
+
                       <View style={styles.rowInputs}>
                         <TextInput
                           label="Preço Venda"
@@ -274,6 +515,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
                           }
                           mode="outlined"
                           keyboardType="decimal-pad"
+                          selectTextOnFocus={true}
                           onChangeText={(v) =>
                             atualizarItemCarrinho(
                               item.codpro,
@@ -282,6 +524,9 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
                               item,
                             )
                           }
+                          onBlur={() =>
+                            validarPrecoVendaOnBlur(item.codpro, item)
+                          }
                           style={styles.inputHalf}
                         />
                         <TextInput
@@ -289,6 +534,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
                           value={dItem.percDesconto || "0,00"}
                           mode="outlined"
                           keyboardType="decimal-pad"
+                          selectTextOnFocus={true}
                           onChangeText={(v) =>
                             atualizarItemCarrinho(
                               item.codpro,
@@ -300,12 +546,14 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
                           style={styles.inputHalf}
                         />
                       </View>
+
                       <View style={styles.rowInputs}>
                         <TextInput
                           label="Valor Desconto"
                           value={dItem.valorDesconto || "0,00"}
                           mode="outlined"
                           keyboardType="decimal-pad"
+                          selectTextOnFocus={true}
                           onChangeText={(v) =>
                             atualizarItemCarrinho(
                               item.codpro,
@@ -327,6 +575,7 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
                           ]}
                         />
                       </View>
+
                       <View style={styles.controles}>
                         <IconButton
                           icon="minus-circle-outline"
@@ -364,15 +613,17 @@ const SelecaoProdutosScreen = ({ route, navigation }: any) => {
             onPress={() => {
               const idParaEnviar = vendedorRecuperado || vendedorId;
 
+              // --- MELHOR PRÁTICA: MARCAR A ROTA COMO FINALIZANDO ANTES DE NAVEGAR ---
+              navigation.setParams({ finalizandoPedido: true });
+              finalizandoRef.current = true;
+
               navigation.navigate("RevisaoPedido", {
-                carrinho,
-                cliente,
-                loja,
-                tabela,
-                vendedorId: idParaEnviar,
-                pedidoIdEdicao,
+                ...route.params, // <--- ISSO É O MAIS IMPORTANTE: Leva VendedorNome, TabelaDesc e Cliente Completo
+                carrinho, // Dados atuais do carrinho
+                vendedorId: idParaEnviar, // Mantém o ID que você definiu
                 produtosOriginais: produtos,
-                dadosPedidoSalvo: route.params?.dadosPedidoSalvo,
+                // Note que não precisamos mais digitar cliente, loja, saldoFlex...
+                // o "...route.params" já está levando eles lá de trás!
               });
             }}
           >
@@ -392,7 +643,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  tabelaTexto: { fontSize: 14, color: "#666" },
+  tabelaTexto: { fontSize: 13, color: "#666" },
+  saldoFlexLabel: { fontSize: 13, color: "#666", marginTop: 2 },
+  saldoFlexValor: { fontWeight: "bold" },
   badge: { backgroundColor: "#005492" },
   searchBar: { margin: 10, borderRadius: 10, backgroundColor: "#fff" },
   divisorSessao: {
@@ -417,7 +670,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   cardAdicionado: { borderLeftWidth: 6, borderLeftColor: "#2e7d32" },
-  descTitle: { fontSize: 15, fontWeight: "bold", color: "#333" },
+  descTitle: { fontSize: 14, fontWeight: "bold", color: "#333" },
   expandido: {
     backgroundColor: "#f9f9f9",
     marginLeft: -40,

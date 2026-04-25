@@ -3,13 +3,12 @@ import { View, FlatList, StyleSheet, Alert } from "react-native";
 import { Card, Text, Button, Divider, List, Surface } from "react-native-paper";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import api from "../api/api"; // Se for usar para sincronizar
+import api from "../api/api";
 
 const ListaPedidosSalvosScreen = ({ navigation }: any) => {
   const [pedidos, setPedidos] = useState<any[]>([]);
   const [sincronizando, setSincronizando] = useState(false);
 
-  // Carrega os pedidos toda vez que a tela ganha foco
   useFocusEffect(
     useCallback(() => {
       carregarPedidos();
@@ -29,6 +28,16 @@ const ListaPedidosSalvosScreen = ({ navigation }: any) => {
     }
   };
 
+  const getNomeCliente = (cliente: any) => {
+    if (!cliente) return "Cliente não identificado";
+    return (
+      cliente.nome ||
+      cliente.razao_social ||
+      cliente.NOME ||
+      "Cliente " + (cliente.codigo || "")
+    );
+  };
+
   const formatarMoeda = (valor: number) => {
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
@@ -37,29 +46,73 @@ const ListaPedidosSalvosScreen = ({ navigation }: any) => {
   };
 
   const editarPedido = (pedido: any) => {
-    // 1. Reconstruir o formato do carrinho que a SelecaoProdutosScreen espera
     const carrinhoReconstruido: any = {};
 
     pedido.itens.forEach((item: any) => {
       carrinhoReconstruido[item.codpro] = {
         qtd: item.qtd,
         precoTabela: item.precoTabela,
-        precoVenda: String(item.precoVenda).replace(".", ","), // Voltando pro formato de input
+        precoVenda: String(item.precoVenda).replace(".", ","),
         percDesconto: String(item.percDesconto || "0,00").replace(".", ","),
         valorDesconto: String(item.valorDesconto || "0,00").replace(".", ","),
-        valorFlex: String(item.valorDesconto || "0,00").replace(".", ","), // Assumindo valorFlex
+        valorFlex: String(
+          item.valorFlex || item.valorDesconto || "0,00",
+        ).replace(".", ","),
       };
     });
 
-    // 2. Navegar para a tela de Seleção mandando o carrinho inicial
     navigation.navigate("SelecaoProdutos", {
       cliente: pedido.cliente,
       loja: pedido.loja,
       tabela: pedido.tabela,
       vendedorId: pedido.vendedor,
-      carrinhoInicial: carrinhoReconstruido, // AVISO: Precisaremos ler isso na SelecaoProdutos
-      pedidoIdEdicao: pedido.id, // Para saber que estamos editando um pedido já salvo
+      carrinhoInicial: carrinhoReconstruido,
+      pedidoIdEdicao: pedido.id,
     });
+  };
+
+  // --- LÓGICA DE ENVIO PADRONIZADA COM A API ADVPL ---
+  const enviarParaProtheus = async (pedido: any) => {
+    try {
+      const payloadProtheus = {
+        cliente:
+          pedido.cliente?.A1_COD || pedido.cliente?.codigo || pedido.cliente,
+        loja: pedido.cliente?.A1_LOJA || pedido.loja || "01",
+        vendedor: pedido.vendedor,
+        tabela: pedido.tabela,
+        condicaoPagamento: pedido.condicaoPagamento || "001",
+        formaPagto: pedido.formaPagto || "BOLETO",
+        valorFlex: pedido.valorFlexTotal || 0,
+
+        // Mapeando itens e garantindo o valorFlex
+        itens: pedido.itens.map((item: any) => ({
+          codpro: item.codpro,
+          qtd: Number(item.qtd),
+          preco: parseFloat(
+            String(item.precoVenda).replace(/\./g, "").replace(",", "."),
+          ),
+          valorFlex: parseFloat(
+            String(item.valorFlex || item.valorDesconto || "0")
+              .replace(/\./g, "")
+              .replace(",", "."),
+          ),
+        })),
+      };
+
+      const response = await api.post(
+        "/api/incluipedidovenda",
+        payloadProtheus,
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        return { sucesso: true };
+      }
+      return { sucesso: false, erro: `Erro no servidor: ${response.status}` };
+    } catch (error: any) {
+      const msg =
+        error.response?.data?.message || "Erro de conexão com o servidor";
+      return { sucesso: false, erro: msg };
+    }
   };
 
   const sincronizarTodos = async () => {
@@ -75,28 +128,43 @@ const ListaPedidosSalvosScreen = ({ navigation }: any) => {
           text: "Sincronizar",
           onPress: async () => {
             setSincronizando(true);
-            try {
-              // EXEMPLO DE LÓGICA DE ENVIO (Adapte para a sua API)
-              /*
-              for (const pedido of pedidos) {
-                await api.post("/api/salvarpedido", pedido);
-              }
-              */
+            const pedidosRestantes = [...pedidos];
+            let sucessos = 0;
+            const falhas: string[] = [];
 
-              // Se deu certo, limpa os pedidos salvos
-              await AsyncStorage.removeItem("@pedidos_offline");
-              setPedidos([]);
+            for (const pedido of pedidos) {
+              const res = await enviarParaProtheus(pedido);
+
+              if (res.sucesso) {
+                sucessos++;
+                // Remove apenas o que foi com sucesso
+                const index = pedidosRestantes.findIndex(
+                  (p) => p.id === pedido.id,
+                );
+                if (index !== -1) pedidosRestantes.splice(index, 1);
+              } else {
+                falhas.push(`${getNomeCliente(pedido.cliente)}: ${res.erro}`);
+              }
+            }
+
+            // Atualiza o storage com os pedidos que falharam (se houver)
+            await AsyncStorage.setItem(
+              "@pedidos_offline",
+              JSON.stringify(pedidosRestantes),
+            );
+            setPedidos(pedidosRestantes);
+            setSincronizando(false);
+
+            if (falhas.length === 0) {
               Alert.alert(
                 "Sucesso",
                 "Todos os pedidos foram sincronizados com sucesso!",
               );
-            } catch (error) {
+            } else {
               Alert.alert(
-                "Erro",
-                "Falha ao sincronizar alguns pedidos. Tente novamente.",
+                "Sincronização Parcial",
+                `${sucessos} enviados com sucesso.\n\nErros:\n${falhas.join("\n")}`,
               );
-            } finally {
-              setSincronizando(false);
             }
           },
         },
@@ -117,7 +185,9 @@ const ListaPedidosSalvosScreen = ({ navigation }: any) => {
           <Card style={styles.card} onPress={() => editarPedido(item)}>
             <Card.Content>
               <View style={styles.headerCard}>
-                <Text style={styles.clienteText}>Cliente: {item.cliente}</Text>
+                <Text style={styles.clienteText} numberOfLines={1}>
+                  Cliente: {getNomeCliente(item.cliente)}
+                </Text>
                 <Text style={styles.dataText}>
                   {new Date(item.dataCriacao).toLocaleDateString("pt-BR")}
                 </Text>
@@ -132,7 +202,7 @@ const ListaPedidosSalvosScreen = ({ navigation }: any) => {
               <Text style={styles.infoText}>
                 Condição:{" "}
                 <Text style={{ fontWeight: "bold" }}>
-                  {item.condicaoPagamento}
+                  {item.condicaoPagamento || "N/A"}
                 </Text>
               </Text>
 
@@ -175,7 +245,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  clienteText: { fontSize: 16, fontWeight: "bold", color: "#005492", flex: 1 },
+  clienteText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#005492",
+    flex: 1,
+    paddingRight: 8,
+  },
   dataText: { fontSize: 12, color: "#888" },
   infoText: { fontSize: 14, color: "#444", marginBottom: 4 },
   footerCard: {
